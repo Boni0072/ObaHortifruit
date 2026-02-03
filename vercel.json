@@ -1,11 +1,11 @@
 {
   "rewrites": [
     {
-      "source": "/api/trpc",
+      "source": "/api/trpc/(.*)",
       "destination": "/api/trpc"
     },
     {
-      "source": "/api/trpc/(.*)",
+      "source": "/api/trpc",
       "destination": "/api/trpc"
     },
     {
