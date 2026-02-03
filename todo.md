@@ -23,7 +23,7 @@
 ## Frontend - Obras
 - [x] Página de listagem de obras
 - [x] Página de criação de obra
-- [ ] Página de edição de obra
+- [x] Página de edição de obra
 - [ ] Página de detalhes da obra
 
 ## Frontend - Budgets
