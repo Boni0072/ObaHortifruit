@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
-import { trpc } from "@/lib/trpc";
+import { useState, useRef, useEffect } from "react";
+import { db } from "@/lib/firebase";
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, addDoc, writeBatch } from "firebase/firestore";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -86,11 +87,18 @@ export default function AccountingStructurePage() {
 }
 
 function ChartOfAccountsTab() {
-  const { data: accounts, isLoading, refetch } = trpc.accounting.listAccounts.useQuery();
-  const createMutation = trpc.accounting.createAccount.useMutation();
-  const updateMutation = trpc.accounting.updateAccount.useMutation();
-  const bulkCreateMutation = trpc.accounting.bulkCreateAccounts.useMutation();
-  const deleteMutation = trpc.accounting.deleteAccount.useMutation();
+  const [accounts, setAccounts] = useState<AccountingAccount[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "accounting_accounts"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AccountingAccount));
+      setAccounts(data);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   const [form, setForm] = useState({ code: "", name: "", type: "" });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -113,23 +121,22 @@ function ChartOfAccountsTab() {
     e.preventDefault();
     try {
       if (editingId) {
-        await updateMutation.mutateAsync({
-          id: editingId,
+        await updateDoc(doc(db, "accounting_accounts", editingId), {
           code: form.code,
           name: form.name,
-          type: form.type || undefined,
+          type: form.type || null,
         });
         toast.success("Conta atualizada!");
       } else {
-        await createMutation.mutateAsync({
+        await setDoc(doc(db, "accounting_accounts", form.code), {
           code: form.code,
           name: form.name,
-          type: form.type || undefined,
+          type: form.type || null,
+          createdAt: new Date().toISOString()
         });
         toast.success("Conta criada!");
       }
       cancelEdit();
-      await refetch();
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar conta" : "Erro ao criar conta");
     }
@@ -137,8 +144,7 @@ function ChartOfAccountsTab() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir conta?")) return;
-    await deleteMutation.mutateAsync({ id });
-    refetch();
+    await deleteDoc(doc(db, "accounting_accounts", id));
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -170,13 +176,14 @@ function ChartOfAccountsTab() {
           return;
         }
 
-        // A mutação 'bulkCreateAccounts' no backend usa 'set' com 'merge: true',
-        // então ela funciona como um "upsert" (cria se não existe, atualiza se existe).
-        // Podemos enviar todos os dados de uma vez para uma única operação em lote no Firestore.
-        await bulkCreateMutation.mutateAsync(mappedData);
+        const batch = writeBatch(db);
+        mappedData.forEach((item: any) => {
+            const docRef = doc(db, "accounting_accounts", item.code);
+            batch.set(docRef, { ...item, createdAt: new Date().toISOString() }, { merge: true });
+        });
+        await batch.commit();
 
         toast.success(`Importação concluída! ${mappedData.length} contas foram processadas.`);
-        await refetch();
       } catch (error) {
         console.error(error);
         toast.error("Erro ao processar arquivo.");
@@ -227,8 +234,8 @@ function ChartOfAccountsTab() {
             <Download className="w-4 h-4 mr-2" />
             Template
           </Button>
-          <Button onClick={() => fileInputRef.current?.click()} disabled={bulkCreateMutation.isPending}>
-            {bulkCreateMutation.isPending ? (
+          <Button onClick={() => fileInputRef.current?.click()} disabled={isLoading}>
+            {isLoading ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             ) : (
               <Upload className="w-4 h-4 mr-2" />
@@ -274,7 +281,7 @@ function ChartOfAccountsTab() {
                 <X className="w-4 h-4 mr-2" /> Cancelar
               </Button>
             )}
-            <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+            <Button type="submit">
               {editingId ? <Pencil className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
               {editingId ? "Salvar" : "Adicionar"}
             </Button>
@@ -352,11 +359,18 @@ function ChartOfAccountsTab() {
 }
 
 function AssetClassesTab() {
-  const { data: classes, isLoading, refetch } = trpc.accounting.listAssetClasses.useQuery();
-  const createMutation = trpc.accounting.createAssetClass.useMutation();
-  const updateMutation = trpc.accounting.updateAssetClass.useMutation();
-  const bulkCreateMutation = trpc.accounting.bulkCreateAssetClasses.useMutation();
-  const deleteMutation = trpc.accounting.deleteAssetClass.useMutation();
+  const [classes, setClasses] = useState<AssetClass[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "asset_classes"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AssetClass));
+      setClasses(data);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   const [form, setForm] = useState({ code: "", name: "", usefulLife: "", corporateUsefulLife: "", assetAccountCode: "", assetAccountDescription: "", depreciationAccountCode: "", depreciationAccountDescription: "", amortizationAccountCode: "", amortizationAccountDescription: "", resultAccountCode: "", resultAccountDescription: "" });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -448,10 +462,14 @@ function AssetClassesTab() {
 
       // 4. Envio para o Backend
       try {
-        await bulkCreateMutation.mutateAsync(mappedData.map(item => item.data) as any);
+        const batch = writeBatch(db);
+        mappedData.forEach((item: any) => {
+            const docRef = doc(db, "asset_classes", item.data.code);
+            batch.set(docRef, { ...item.data, createdAt: new Date().toISOString() }, { merge: true });
+        });
+        await batch.commit();
         toast.success(`${mappedData.length} classes importadas com sucesso!`);
         setSelectedFile(null);
-        refetch();
       } catch (apiError: any) {
         console.error("Erro ao importar para o backend:", apiError);
         const defaultMessage = "Ocorreu um erro no servidor ao salvar os dados.";
@@ -552,15 +570,17 @@ function AssetClassesTab() {
       };
 
       if (editingId) {
-        await updateMutation.mutateAsync({ id: editingId, ...payload });
+        await updateDoc(doc(db, "asset_classes", editingId), payload);
         toast.success("Classe atualizada!");
       } else {
-        await createMutation.mutateAsync(payload);
+        await setDoc(doc(db, "asset_classes", payload.code), {
+            ...payload,
+            createdAt: new Date().toISOString()
+        });
         toast.success("Classe criada!");
       }
       
       cancelEdit();
-      await refetch();
     } catch (error) {
       console.error(error);
       toast.error(editingId ? "Erro ao atualizar classe" : "Erro ao criar classe");
@@ -569,8 +589,7 @@ function AssetClassesTab() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir classe?")) return;
-    await deleteMutation.mutateAsync({ id });
-    refetch();
+    await deleteDoc(doc(db, "asset_classes", id));
   };
 
   return (
@@ -594,8 +613,8 @@ function AssetClassesTab() {
             <Download className="w-4 h-4 mr-2" />
             Baixar Template
           </Button>
-          <Button onClick={() => fileInputRef.current?.click()} disabled={bulkCreateMutation.isPending}>
-            {bulkCreateMutation.isPending ? (
+          <Button onClick={() => fileInputRef.current?.click()} disabled={isLoading}>
+            {isLoading ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             ) : (
               <Upload className="w-4 h-4 mr-2" />
@@ -617,8 +636,8 @@ function AssetClassesTab() {
           <div className="p-4 border rounded-lg bg-muted/40">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium">Arquivo selecionado: {selectedFile.name}</p>
-              <Button onClick={handleFileUpload} disabled={bulkCreateMutation.isPending}>
-                {bulkCreateMutation.isPending ? (
+              <Button onClick={handleFileUpload} disabled={isLoading}>
+                {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Importando...
@@ -689,7 +708,7 @@ function AssetClassesTab() {
                   <X className="w-4 h-4 mr-2" /> Cancelar
                 </Button>
               )}
-              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+              <Button type="submit">
                 {editingId ? <Pencil className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
                 {editingId ? "Salvar" : "Adicionar"}
               </Button>
@@ -756,11 +775,18 @@ function AssetClassesTab() {
 }
 
 function CostCentersTab() {
-  const { data: centers, isLoading, refetch } = trpc.accounting.listCostCenters.useQuery();
-  const createMutation = trpc.accounting.createCostCenter.useMutation();
-  const updateMutation = trpc.accounting.updateCostCenter.useMutation();
-  const bulkCreateMutation = trpc.accounting.bulkCreateCostCenters.useMutation();
-  const deleteMutation = trpc.accounting.deleteCostCenter.useMutation();
+  const [centers, setCenters] = useState<CostCenter[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "cost_centers"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CostCenter));
+      setCenters(data);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   const [form, setForm] = useState({ code: "", name: "", department: "" });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -781,14 +807,16 @@ function CostCentersTab() {
     e.preventDefault();
     try {
       if (editingId) {
-        await updateMutation.mutateAsync({ id: editingId, ...form });
+        await updateDoc(doc(db, "cost_centers", editingId), form);
         toast.success("Centro de custo atualizado!");
       } else {
-        await createMutation.mutateAsync(form);
+        await addDoc(collection(db, "cost_centers"), {
+            ...form,
+            createdAt: new Date().toISOString()
+        });
         toast.success("Centro de custo criado!");
       }
       cancelEdit();
-      await refetch();
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar centro de custo" : "Erro ao criar centro de custo");
     }
@@ -796,8 +824,7 @@ function CostCentersTab() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir centro de custo?")) return;
-    await deleteMutation.mutateAsync({ id });
-    refetch();
+    await deleteDoc(doc(db, "cost_centers", id));
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -829,9 +856,13 @@ function CostCentersTab() {
           return;
         }
 
-        await bulkCreateMutation.mutateAsync(mappedData);
+        const batch = writeBatch(db);
+        mappedData.forEach((item: any) => {
+            const newDocRef = doc(collection(db, "cost_centers"));
+            batch.set(newDocRef, { ...item, createdAt: new Date().toISOString() });
+        });
+        await batch.commit();
         toast.success(`${mappedData.length} centros de custo importados!`);
-        refetch();
       } catch (error) {
         console.error(error);
         toast.error("Erro ao processar arquivo.");
@@ -873,8 +904,8 @@ function CostCentersTab() {
             <Download className="w-4 h-4 mr-2" />
             Template
           </Button>
-          <Button onClick={() => fileInputRef.current?.click()} disabled={bulkCreateMutation.isPending}>
-            {bulkCreateMutation.isPending ? (
+          <Button onClick={() => fileInputRef.current?.click()} disabled={isLoading}>
+            {isLoading ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             ) : (
               <Upload className="w-4 h-4 mr-2" />
@@ -911,7 +942,7 @@ function CostCentersTab() {
                 <X className="w-4 h-4 mr-2" /> Cancelar
               </Button>
             )}
-            <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+            <Button type="submit">
               {editingId ? <Pencil className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
               {editingId ? "Salvar" : "Adicionar"}
             </Button>

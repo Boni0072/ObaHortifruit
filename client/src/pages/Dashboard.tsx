@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
-import { trpc } from "@/lib/trpc";
+import { useState, useMemo, useEffect } from "react";
+import { db } from "@/lib/firebase";
+import { collection, onSnapshot } from "firebase/firestore";
 import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip as RechartsTooltip } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,11 +16,39 @@ const formatCurrency = (value: number) =>
 
 export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'budget' | 'assets'>('budget');
-  const { data: projects, isLoading: projectsLoading } = trpc.projects.list.useQuery();
-  const { data: expenses, isLoading: expensesLoading } = trpc.expenses.listByProject.useQuery({ projectId: "all" });
-  const { data: assets, isLoading: assetsLoading } = trpc.assets.list.useQuery();
-  const { data: allBudgets, isLoading: budgetsLoading } = trpc.budgets.listByProject.useQuery({ projectId: "all" });
   const [, setLocation] = useLocation();
+
+  const [projects, setProjects] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [assets, setAssets] = useState<any[]>([]);
+  const [allBudgets, setAllBudgets] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubProjects = onSnapshot(collection(db, "projects"), (snapshot) => {
+      setProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    const unsubExpenses = onSnapshot(collection(db, "expenses"), (snapshot) => {
+      setExpenses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    const unsubAssets = onSnapshot(collection(db, "assets"), (snapshot) => {
+      setAssets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    const unsubBudgets = onSnapshot(collection(db, "budgets"), (snapshot) => {
+      setAllBudgets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    // Pequeno delay para garantir que o loading não pisque muito rápido ou fique preso
+    const timer = setTimeout(() => setIsLoading(false), 800);
+
+    return () => {
+      unsubProjects();
+      unsubExpenses();
+      unsubAssets();
+      unsubBudgets();
+      clearTimeout(timer);
+    };
+  }, []);
 
   // Capex Metrics
   const totalCapex = expenses?.filter(e => e.type === 'capex').reduce((acc, curr) => acc + Number(curr.amount), 0) || 0;
@@ -317,7 +346,7 @@ export default function Dashboard() {
     })).sort((a, b) => b.finalCost - a.finalCost);
   }, [assets, expenses]);
 
-  if (projectsLoading || expensesLoading || assetsLoading || budgetsLoading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
         <Loader2 className="animate-spin" />
