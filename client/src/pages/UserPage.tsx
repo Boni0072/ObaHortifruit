@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { trpc } from "@/lib/trpc";
+import { useState, useEffect } from "react";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "firebase/firestore";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -32,11 +33,17 @@ const AVAILABLE_PAGES = [
 ];
 
 export default function UserPage() {
-  // Hooks do TRPC (assumindo que o router 'users' existe ou será criado no backend)
-  const { data: users, isLoading, refetch, isError } = trpc.users.list.useQuery();
-  const createMutation = trpc.users.create.useMutation();
-  const updateMutation = trpc.users.update.useMutation();
-  const deleteMutation = trpc.users.delete.useMutation();
+  const [users, setUsers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(data);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -83,19 +90,26 @@ export default function UserPage() {
     
     try {
       if (editingId) {
-        await updateMutation.mutateAsync({
-          id: editingId,
+        const updateData: any = {
           ...formData,
-          password: formData.password || undefined, // Enviar senha apenas se preenchida
-        });
+        };
+        // Remove a senha se estiver vazia para não salvar string vazia
+        if (!updateData.password) delete updateData.password;
+        
+        await updateDoc(doc(db, "users", editingId), updateData);
         toast.success("Usuário atualizado com sucesso!");
       } else {
-        await createMutation.mutateAsync(formData);
+        // Criação direta no Firestore. 
+        // Nota: Isso cria o registro visual, mas não cria a conta de autenticação (Auth) 
+        // se não houver backend integrado. Para fins de gestão visual, funciona.
+        await addDoc(collection(db, "users"), {
+          ...formData,
+          createdAt: new Date().toISOString()
+        });
         toast.success("Usuário criado com sucesso!");
       }
       setOpen(false);
       resetForm();
-      refetch();
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar usuário" : "Erro ao criar usuário");
     }
@@ -104,9 +118,8 @@ export default function UserPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("Tem certeza que deseja excluir este usuário?")) return;
     try {
-      await deleteMutation.mutateAsync({ id });
+      await deleteDoc(doc(db, "users", id));
       toast.success("Usuário removido com sucesso!");
-      refetch();
     } catch (error) {
       toast.error("Erro ao remover usuário");
     }
@@ -120,19 +133,6 @@ export default function UserPage() {
       return { ...prev, allowedPages: pages };
     });
   };
-
-  if (isError) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[50vh] text-center space-y-4">
-        <div className="bg-red-100 p-4 rounded-full">
-          <AlertTriangle className="h-10 w-10 text-red-600" />
-        </div>
-        <h2 className="text-xl font-semibold text-gray-900">Erro de Conexão com o Backend</h2>
-        <p className="text-gray-600 max-w-md">Não foi possível carregar a lista de usuários. Verifique se o router <code>users</code> foi registrado no <code>appRouter</code> do backend.</p>
-        <Button onClick={() => refetch()} variant="outline">Tentar Novamente</Button>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -220,8 +220,8 @@ export default function UserPage() {
               </div>
 
               <DialogFooter>
-                <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
-                  {createMutation.isPending || updateMutation.isPending ? "Salvando..." : "Salvar"}
+                <Button type="submit">
+                  Salvar
                 </Button>
               </DialogFooter>
             </form>

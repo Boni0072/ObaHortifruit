@@ -117,7 +117,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const totalNotifications = pendingProjects.length + pendingInventoryCount;
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Home, path: '/' },
+    { id: 'dashboard', label: 'Dashboard', icon: Home, path: '/dashboard' },
     { id: 'projects', label: 'Obras', icon: FileText, path: '/projects' },
     { id: 'budgets', label: 'Budgets', icon: DollarSign, path: '/budgets' },
     { id: 'assets', label: 'Ativo em andamento', icon: Package, path: '/assets' },
