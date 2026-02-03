@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc } from "firebase/firestore";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
@@ -660,7 +660,6 @@ function ProjectBudgetRow({ project, onDataLoaded }: { project: ProjectType, onD
 
   const utils = trpc.useUtils();
   const updateExpenseMutation = trpc.expenses.update.useMutation();
-  const updateProjectMutation = trpc.projects.update.useMutation();
 
   const [createAssetOpen, setCreateAssetOpen] = useState(false);
   const [assetCreationCallback, setAssetCreationCallback] = useState<((id: string | number) => void) | null>(null);
@@ -691,14 +690,13 @@ function ProjectBudgetRow({ project, onDataLoaded }: { project: ProjectType, onD
       };
       const newHistory = [...(project.approvalHistory || []), historyEntry];
 
-      await updateProjectMutation.mutateAsync({
-        id,
+      await updateDoc(doc(db, "projects", id), {
         status: newStatus,
-        notes: notes,
+        notes: notes || null,
         approvalHistory: newHistory,
-      } as any);
+        updatedAt: new Date().toISOString()
+      });
       toast.success("Status do projeto atualizado!");
-      utils.projects.list.invalidate();
     } catch (error: any) {
       console.error("Erro ao atualizar status:", error);
       if (error.message?.includes("Não autorizado") || error.data?.code === "FORBIDDEN" || error.message?.includes("Forbidden")) {
