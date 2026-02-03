@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, updateDoc, doc, onSnapshot } from "firebase/firestore";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -41,6 +40,10 @@ export default function AssetInventoryPage() {
   const [executionData, setExecutionData] = useState<Record<string, { verified: boolean; costCenter: string }>>({});
   const [schedules, setSchedules] = useState<InventorySchedule[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const [assets, setAssets] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [costCenters, setCostCenters] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "inventory_schedules"), (snapshot) => {
@@ -60,16 +63,36 @@ export default function AssetInventoryPage() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "assets"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAssets(data);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(data);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "cost_centers"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCostCenters(data);
+    });
+    return () => unsubscribe();
+  }, []);
   
   // Schedule Form State
   const [scheduleDate, setScheduleDate] = useState(new Date().toISOString().split("T")[0]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
-
-  const { data: assets, isLoading } = trpc.assets.list.useQuery();
-  const { data: users } = trpc.users.list.useQuery();
-  const { data: costCenters } = trpc.accounting.listCostCenters.useQuery();
-  const updateAssetMutation = trpc.assets.update.useMutation();
 
   const filteredAssets = assets?.filter(asset =>
     (asset.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
