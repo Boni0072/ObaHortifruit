@@ -16,6 +16,7 @@ import Login from "./pages/Login";
 import AssetInventoryPage from "./pages/AssetInventoryPage";
 import ReportsPage from "./pages/ReportsPage";
 
+// App Router Configuration
 function Router() {
   return (
     <Switch>
