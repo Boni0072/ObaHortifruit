@@ -127,10 +127,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { id: 'users', label: 'Usuários', icon: Users, path: '/users' },
   ];
 
-  const allowedPages = (user as any)?.allowedPages || [];
+  const allowedPages = (user as any)?.allowedPages;
 
   const visibleNavItems = navItems.filter(item => {
-    if ((user as any)?.role === 'diretoria') return true;
+    const role = (user as any)?.role;
+    if (role === 'diretoria' || role === 'admin') return true;
+    // Se allowedPages não estiver definido (undefined/null), permite acesso (comportamento padrão ou legado)
+    if (!allowedPages) return true;
     return allowedPages.includes(item.id);
   });
 
