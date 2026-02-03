@@ -5,6 +5,9 @@
       "destination": "/api/index"
     },
     {
+      "handle": "filesystem"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
