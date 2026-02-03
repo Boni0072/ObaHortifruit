@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, updateDoc, doc, onSnapshot } from "firebase/firestore";
+import { collection, addDoc, updateDoc, doc, onSnapshot, writeBatch } from "firebase/firestore";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -119,10 +119,47 @@ export default function AssetInventoryPage() {
 
   // Garante a leitura do ID independente do formato do objeto user (id, uid, openId, sub)
   const currentUserId = (user as any)?.id || (user as any)?.openId || (user as any)?.uid || (user as any)?.sub;
+  const userRole = (user as any)?.role;
 
   const myPendingSchedules = schedules.filter(s => 
     s.status === 'pending' && currentUserId && s.userIds.some(uid => String(uid) === String(currentUserId))
   );
+
+  const pendingApprovalSchedules = schedules.filter(s => 
+    s.status === 'waiting_approval' && (
+      userRole === 'admin' || 
+      (s.requesterId && String(s.requesterId) === String(currentUserId))
+    )
+  );
+
+  const handleApproveInventory = async (schedule: InventorySchedule) => {
+    try {
+      const batch = writeBatch(db);
+      
+      // Atualiza os ativos com as novas informações (se houver mudança de centro de custo)
+      if (schedule.results) {
+        schedule.results.forEach(result => {
+          if (result.newCostCenter) {
+            const assetRef = doc(db, "assets", result.assetId);
+            batch.update(assetRef, { 
+              costCenter: result.newCostCenter,
+              updatedAt: new Date().toISOString()
+            });
+          }
+        });
+      }
+
+      // Atualiza o status do agendamento para concluído
+      const scheduleRef = doc(db, "inventory_schedules", schedule.id);
+      batch.update(scheduleRef, { status: 'completed' });
+
+      await batch.commit();
+      toast.success("Inventário aprovado e processado com sucesso!");
+    } catch (error) {
+      console.error("Erro ao aprovar inventário:", error);
+      toast.error("Erro ao processar aprovação.");
+    }
+  };
 
   // Inicializa os dados de execução quando o diálogo abre
   useEffect(() => {
@@ -346,6 +383,38 @@ export default function AssetInventoryPage() {
           </Dialog>
         </div>
       </div>
+
+      {pendingApprovalSchedules.length > 0 && (
+        <Card className="bg-blue-50 border-blue-200">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2 text-blue-800">
+              <CheckCircle2 className="h-5 w-5" />
+              <h3 className="font-semibold">Aprovações de Inventário Pendentes ({pendingApprovalSchedules.length})</h3>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {pendingApprovalSchedules.map(schedule => (
+                <div key={schedule.id} className="flex items-center justify-between bg-white p-3 rounded-md border border-blue-100 shadow-sm">
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">Realizado em: {new Date(schedule.date).toLocaleDateString('pt-BR')}</p>
+                    <p className="text-xs text-slate-500">{schedule.results?.length || 0} ativos verificados</p>
+                    {schedule.notes && <p className="text-xs text-slate-500 italic mt-1">"{schedule.notes}"</p>}
+                  </div>
+                  <Button 
+                    size="sm" 
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={() => handleApproveInventory(schedule)}
+                  >
+                    <Check className="w-4 h-4 mr-2" />
+                    Aprovar e Atualizar
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {myPendingSchedules.length > 0 && (
         <Card className="bg-orange-50 border-orange-200">
