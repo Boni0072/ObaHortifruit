@@ -75,11 +75,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     return false;
   }) || [];
 
+  const prevPendingProjectsCountRef = useRef(0);
+
   useEffect(() => {
-    if (pendingProjects.length > 0) {
+    const currentCount = pendingProjects.length;
+    if (currentCount > prevPendingProjectsCountRef.current) {
       const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
       audio.play().catch(e => console.log("Audio play failed (autoplay policy)", e));
     }
+    prevPendingProjectsCountRef.current = currentCount;
   }, [pendingProjects.length]);
 
   const prevInventoryCountRef = useRef(0);
@@ -125,6 +129,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       };
       const newHistory = [...(project.approvalHistory || []), historyEntry];
       await updateDoc(doc(db, "projects", project.id), { status: nextStatus, approvalHistory: newHistory });
+      const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
+      audio.play().catch(e => console.error("Audio play failed", e));
       toast.success(`Projeto ${project.name} aprovado!`);
     }
   };
@@ -139,6 +145,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     };
     const newHistory = [...(project.approvalHistory || []), historyEntry];
     await updateDoc(doc(db, "projects", project.id), { status: 'rejeitado', approvalHistory: newHistory });
+    const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
+    audio.play().catch(e => console.error("Audio play failed", e));
     toast.success(`Projeto ${project.name} rejeitado.`);
   };
 
