@@ -32,7 +32,24 @@ interface InventorySchedule {
 }
 
 export default function AssetInventoryPage() {
-  const { user } = useAuth();
+  const { user: authUser } = useAuth();
+  const [user, setUser] = useState<any>(authUser);
+
+  useEffect(() => {
+    if (authUser) {
+      setUser(authUser);
+    } else {
+      const storedUser = localStorage.getItem("obras_user");
+      if (storedUser) {
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch (e) {
+          console.error("Erro ao recuperar usuário do storage", e);
+        }
+      }
+    }
+  }, [authUser]);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
@@ -102,6 +119,10 @@ export default function AssetInventoryPage() {
 
   // Garante a leitura do ID independente do formato do objeto user (id, uid, openId, sub)
   const currentUserId = (user as any)?.id || (user as any)?.openId || (user as any)?.uid || (user as any)?.sub;
+
+  const myPendingSchedules = schedules.filter(s => 
+    s.status === 'pending' && currentUserId && s.userIds.some(uid => String(uid) === String(currentUserId))
+  );
 
   // Inicializa os dados de execução quando o diálogo abre
   useEffect(() => {
@@ -325,6 +346,38 @@ export default function AssetInventoryPage() {
           </Dialog>
         </div>
       </div>
+
+      {myPendingSchedules.length > 0 && (
+        <Card className="bg-orange-50 border-orange-200">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2 text-orange-800">
+              <AlertCircle className="h-5 w-5" />
+              <h3 className="font-semibold">Inventários Pendentes ({myPendingSchedules.length})</h3>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {myPendingSchedules.map(schedule => (
+                <div key={schedule.id} className="flex items-center justify-between bg-white p-3 rounded-md border border-orange-100 shadow-sm">
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">Agendado para: {new Date(schedule.date).toLocaleDateString('pt-BR')}</p>
+                    <p className="text-xs text-slate-500">{schedule.assetIds.length} ativos para conferir</p>
+                    {schedule.notes && <p className="text-xs text-slate-500 italic mt-1">"{schedule.notes}"</p>}
+                  </div>
+                  <Button 
+                    size="sm" 
+                    className="bg-orange-600 hover:bg-orange-700 text-white"
+                    onClick={() => setPerformingSchedule(schedule)}
+                  >
+                    <PlayCircle className="w-4 h-4 mr-2" />
+                    Iniciar Contagem
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
