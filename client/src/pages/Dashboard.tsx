@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
-import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip as RechartsTooltip } from 'recharts';
+import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, TrendingUp, DollarSign, Package, Activity, BarChart3, PieChart, ArrowUpRight, AlertTriangle, TrendingDown, Target, Wallet } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, Package, Activity, BarChart3, ArrowUpRight, AlertTriangle, TrendingDown, Target, Wallet } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useLocation } from "wouter";
 
@@ -13,6 +13,19 @@ const formatCurrency = (value: number) =>
     style: "currency",
     currency: "BRL",
   }).format(value);
+
+const STATUS_COLORS: Record<string, string> = {
+  aguardando_classificacao: '#3b82f6', // blue-500
+  aguardando_engenharia: '#eab308', // yellow-500
+  aguardando_diretoria: '#f97316', // orange-500
+  aprovado: '#22c55e', // green-500
+  rejeitado: '#ef4444', // red-500
+  planejamento: '#64748b', // slate-500
+  em_andamento: '#a855f7', // purple-500
+  concluido: '#14b8a6', // teal-500
+  pausado: '#ec4899', // pink-500
+  sem_status: '#94a3b8' // slate-400
+};
 
 export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'budget' | 'assets'>('budget');
@@ -266,8 +279,20 @@ export default function Dashboard() {
         return { name: monthName, realized: monthRealized, budget: monthlyBudgetMap[monthIndex] };
     });
 
+    // Projects by Status (Count)
+    const statusMap: Record<string, number> = {};
+    allProjects.forEach(p => {
+        const status = p.status || 'sem_status';
+        statusMap[status] = (statusMap[status] || 0) + 1;
+    });
+
+    const projectsByStatus = Object.entries(statusMap)
+      .map(([name, value]) => ({ name, displayName: name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), value }))
+      .filter(item => item.value > 0)
+      .sort((a, b) => b.value - a.value);
+
     return {
-        totalBudget, totalRealized, deviation, consumptionPct, burnRate, runRate, costCenters, monthlyEvolution
+        totalBudget, totalRealized, deviation, consumptionPct, burnRate, runRate, costCenters, monthlyEvolution, projectsByStatus
     };
   }, [projects, expenses, allBudgets]);
 
@@ -452,7 +477,7 @@ export default function Dashboard() {
                 </Card>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-6">
+            <div className="grid md:grid-cols-2 gap-6">
                 {/* Gráfico de Evolução Mensal */}
                 <Card className="md:col-span-2">
                     <CardHeader>
@@ -486,6 +511,44 @@ export default function Dashboard() {
                             <div className="flex items-center gap-1"><div className="w-3 h-3 bg-slate-200"></div> Orçado (Linear)</div>
                             <div className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-500"></div> Realizado</div>
                             <div className="flex items-center gap-1"><div className="w-3 h-3 bg-red-400"></div> Acima do Budget</div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Gráfico de Orçamento por Status */}
+                <Card className="md:col-span-1">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-base font-semibold text-slate-700">Obras por Status</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="h-[300px] w-full relative">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={budgetMetrics.projectsByStatus}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={60}
+                                        outerRadius={80}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                        label={({ value }) => value}
+                                    >
+                                        {budgetMetrics.projectsByStatus.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name] || '#94a3b8'} />
+                                        ))}
+                                    </Pie>
+                                    <RechartsTooltip 
+                                        formatter={(value: number) => value}
+                                        contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0' }}
+                                    />
+                                    <Legend layout="horizontal" verticalAlign="bottom" align="center" formatter={(value, entry: any) => <span className="text-xs text-slate-600 ml-1">{budgetMetrics.projectsByStatus.find(i => i.name === value)?.displayName || value}</span>} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center bg-white/90 w-24 h-24 rounded-full shadow-sm border border-slate-100 pointer-events-none z-10">
+                                <span className="text-4xl font-bold text-slate-700">{projects?.length || 0}</span>
+                                <span className="text-[10px] text-slate-500 font-medium uppercase">Obras</span>
+                            </div>
                         </div>
                     </CardContent>
                 </Card>

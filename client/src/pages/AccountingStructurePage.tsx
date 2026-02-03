@@ -46,25 +46,6 @@ export default function AccountingStructurePage() {
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-slate-700">Estrutura Contábil</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle>Imobilizado em Andamento</CardTitle>
-          <CardDescription>Resumo dos ativos em andamento.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4">
-              <div>
-                  <p className="text-sm font-medium text-muted-foreground">Status</p>
-                  <p className="text-2xl font-bold">1 em andamento</p>
-              </div>
-              <div>
-                  <p className="text-sm font-medium text-muted-foreground">Último Ativo Adicionado</p>
-                  <p className="font-medium">CONTRUÇÃO DO TELHADO</p>
-                  <p className="text-sm text-muted-foreground">R$ 0,00</p>
-              </div>
-          </div>
-        </CardContent>
-      </Card>
       <Tabs defaultValue="chart-of-accounts" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="chart-of-accounts">Plano de Contas</TabsTrigger>
