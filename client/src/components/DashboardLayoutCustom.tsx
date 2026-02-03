@@ -21,7 +21,24 @@ const formatCurrency = (value: number) =>
   }).format(value);
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user: authUser, logout, isAuthenticated } = useAuth();
+  const [user, setUser] = useState<any>(authUser);
+
+  useEffect(() => {
+    if (authUser) {
+      setUser(authUser);
+    } else {
+      const storedUser = localStorage.getItem("obras_user");
+      if (storedUser) {
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch (e) {
+          console.error("Erro ao recuperar usuário do storage", e);
+        }
+      }
+    }
+  }, [authUser]);
+
   const [location, setLocation] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [pendingInventoryCount, setPendingInventoryCount] = useState(0);
