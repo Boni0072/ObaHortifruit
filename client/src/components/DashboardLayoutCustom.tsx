@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, updateDoc, doc } from "firebase/firestore";
 import { useAuth } from '@/_core/hooks/useAuth';
@@ -27,6 +27,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [pendingInventoryCount, setPendingInventoryCount] = useState(0);
   const [projects, setProjects] = useState<any[]>([]);
   const [viewProject, setViewProject] = useState<any | null>(null);
+  
+  // Garante a leitura do ID independente do formato do objeto user
+  const userId = (user as any)?.id || (user as any)?.openId || (user as any)?.uid || (user as any)?.sub;
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "projects"), (snapshot) => {
@@ -47,6 +50,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const pendingProjects = projects?.filter(p => {
     if (!userRole) return false;
+    // Admin vê todas as pendências
+    if (userRole === 'admin') return ['aguardando_classificacao', 'aguardando_engenharia', 'aguardando_diretoria'].includes(p.status);
     if (userRole === 'classificacao' && p.status === 'aguardando_classificacao') return true;
     if (userRole === 'engenharia' && p.status === 'aguardando_engenharia') return true;
     if (userRole === 'diretoria' && p.status === 'aguardando_diretoria') return true;
@@ -60,26 +65,32 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   }, [pendingProjects.length]);
 
+  const prevInventoryCountRef = useRef(0);
+
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
 
     const unsubscribe = onSnapshot(collection(db, "inventory_schedules"), (snapshot) => {
       const schedules = snapshot.docs.map(doc => doc.data());
       // Check if current user is in any pending schedule
       const mySchedules = schedules.filter((s: any) =>
-        s.status === 'pending' && s.userIds.includes((user as any).id)
+        s.status === 'pending' && s.userIds && s.userIds.includes(userId)
       );
       
-      if (mySchedules.length > pendingInventoryCount) {
+      const currentCount = mySchedules.length;
+
+      if (currentCount > prevInventoryCountRef.current) {
            const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
            audio.play().catch(e => console.log("Audio play failed", e));
-           toast.info(`Você tem ${mySchedules.length} agendamentos de inventário pendentes.`);
+           toast.info(`Você tem ${currentCount} agendamentos de inventário pendentes.`);
       }
-      setPendingInventoryCount(mySchedules.length);
+      
+      prevInventoryCountRef.current = currentCount;
+      setPendingInventoryCount(currentCount);
     });
 
     return () => unsubscribe();
-  }, [user, pendingInventoryCount]);
+  }, [userId]);
 
   const handleApprove = async (project: any) => {
     let nextStatus = '';
