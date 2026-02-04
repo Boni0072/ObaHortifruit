@@ -677,7 +677,7 @@ export default function AssetsPage() {
                           <TableRow>
                             <TableHead className="text-base">Descrição da Despesa</TableHead>
                             <TableHead className="text-base">Obra</TableHead>
-                            <TableHead className="text-base">Conta Contábil</TableHead>
+                            <TableHead className="text-base">Nota Fiscal</TableHead>
                             <TableHead className="text-base">Classificação</TableHead>
                             <TableHead className="text-right text-base">Valor</TableHead>
                             <TableHead className="text-right text-base">Ações</TableHead>
@@ -689,7 +689,12 @@ export default function AssetsPage() {
                               <TableRow key={item.id}>
                                 <TableCell className="text-base">{item.description || "Sem descrição"}</TableCell>
                                 <TableCell className="text-base">{projects?.find(p => String(p.id) === String(item.projectId))?.name || "-"}</TableCell>
-                                <TableCell className="text-base">{item.accountingAccount || "-"}</TableCell>
+                                <TableCell className="text-base font-mono text-muted-foreground">
+                                  {
+                                    item.notes?.match(/NF-e:\s*(\d{44})/)?.[1] || 
+                                    "-"
+                                  }
+                                </TableCell>
                                 <TableCell className="text-base">
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-sm font-medium ${
                                     item.type === 'capex' ? 'bg-blue-100 text-blue-800' : 

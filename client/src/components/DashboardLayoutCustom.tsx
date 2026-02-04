@@ -152,6 +152,28 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const totalNotifications = pendingProjects.length + pendingInventoryCount;
 
+  useEffect(() => {
+    const baseTitle = "Control Obra/Ativos";
+    let interval: ReturnType<typeof setInterval>;
+
+    if (totalNotifications > 0) {
+      let toggle = false;
+      interval = setInterval(() => {
+        document.title = toggle 
+          ? `🔴 ALERTA (${totalNotifications}) - AÇÃO NECESSÁRIA` 
+          : baseTitle;
+        toggle = !toggle;
+      }, 1000);
+    } else {
+      document.title = baseTitle;
+    }
+
+    return () => {
+      clearInterval(interval);
+      document.title = baseTitle;
+    };
+  }, [totalNotifications]);
+
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home, path: '/dashboard' },
     { id: 'projects', label: 'Obras', icon: FileText, path: '/projects' },

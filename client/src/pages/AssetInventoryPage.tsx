@@ -4,6 +4,7 @@ import { collection, addDoc, updateDoc, doc, onSnapshot, writeBatch } from "fire
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Search, Download, QrCode, ClipboardList, Calendar as CalendarIcon, Users, CheckCircle2, AlertCircle, PlayCircle, Check, XCircle } from "lucide-react";
@@ -19,6 +20,7 @@ interface InventoryResult {
   assetId: string;
   newCostCenter: string;
   verified: boolean;
+  observations?: string;
 }
 
 interface InventorySchedule {
@@ -81,7 +83,7 @@ export default function AssetInventoryPage() {
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [performingSchedule, setPerformingSchedule] = useState<InventorySchedule | null>(null);
   const [reviewingSchedule, setReviewingSchedule] = useState<InventorySchedule | null>(null);
-  const [executionData, setExecutionData] = useState<Record<string, { verified: boolean; costCenter: string }>>({});
+  const [executionData, setExecutionData] = useState<Record<string, { verified: boolean; costCenter: string; observations: string }>>({});
   const [schedules, setSchedules] = useState<InventorySchedule[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
@@ -210,13 +212,14 @@ export default function AssetInventoryPage() {
   // Inicializa os dados de execução quando o diálogo abre
   useEffect(() => {
     if (performingSchedule && assets) {
-      const initialData: Record<string, { verified: boolean; costCenter: string }> = {};
+      const initialData: Record<string, { verified: boolean; costCenter: string; observations: string }> = {};
       performingSchedule.assetIds.forEach(id => {
         const asset = assets.find(a => a.id === id);
         const currentCC = typeof asset?.costCenter === 'object' ? (asset.costCenter as any).code : asset?.costCenter;
         initialData[id] = {
           verified: true,
-          costCenter: currentCC || ""
+          costCenter: currentCC || "",
+          observations: ""
         };
       });
       setExecutionData(initialData);
@@ -228,7 +231,8 @@ export default function AssetInventoryPage() {
     const results: InventoryResult[] = Object.entries(executionData).map(([assetId, data]) => ({
       assetId,
       newCostCenter: data.costCenter,
-      verified: data.verified
+      verified: data.verified,
+      observations: data.observations
     }));
 
     const scheduleRef = doc(db, "inventory_schedules", scheduleId);
@@ -800,7 +804,7 @@ export default function AssetInventoryPage() {
 
       {/* Diálogo para Realizar Inventário */}
       <Dialog open={!!performingSchedule} onOpenChange={(open) => !open && setPerformingSchedule(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-[95vw] max-h-[95vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="h-5 w-5" />
@@ -820,6 +824,7 @@ export default function AssetInventoryPage() {
                    <TableHead>Nome</TableHead>
                    <TableHead>Centro de Custo (Atual)</TableHead>
                    <TableHead>Novo Centro de Custo</TableHead>
+                   <TableHead>Observações</TableHead>
                  </TableRow>
                </TableHeader>
                <TableBody>
@@ -862,6 +867,17 @@ export default function AssetInventoryPage() {
                           </SelectContent>
                         </Select>
                      </TableCell>
+                     <TableCell>
+                      <Textarea
+                          value={executionData[asset.id]?.observations || ""}
+                          onChange={(e) => setExecutionData(prev => ({
+                            ...prev,
+                            [asset.id]: { ...prev[asset.id], observations: e.target.value }
+                          }))}
+                          placeholder="Observações..."
+                        className="text-xs min-h-[64px] min-w-[250px]"
+                        />
+                     </TableCell>
                    </TableRow>
                  ))}
                </TableBody>
@@ -880,7 +896,7 @@ export default function AssetInventoryPage() {
 
       {/* Diálogo para Validar/Aprovar Inventário */}
       <Dialog open={!!reviewingSchedule} onOpenChange={(open) => !open && setReviewingSchedule(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-[95vw] max-h-[95vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-blue-600" />
@@ -899,6 +915,7 @@ export default function AssetInventoryPage() {
                    <TableHead className="text-center">Verificado</TableHead>
                    <TableHead>Centro de Custo (Atual)</TableHead>
                    <TableHead>Centro de Custo (Novo)</TableHead>
+                   <TableHead>Observações</TableHead>
                  </TableRow>
                </TableHeader>
                <TableBody>
@@ -929,6 +946,9 @@ export default function AssetInventoryPage() {
                           ) : (
                               <span className="text-muted-foreground italic">Mantido</span>
                           )}
+                       </TableCell>
+                       <TableCell className="text-xs text-muted-foreground">
+                          {result.observations || "-"}
                        </TableCell>
                      </TableRow>
                    );
