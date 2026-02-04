@@ -447,7 +447,7 @@ export default function ProjectsPage() {
             </DialogHeader>
             {viewProject && (
               <div className="space-y-4">
-                <div className="py-4 mb-20">
+                <div className="py-4 mb-36">
                   <h4 className="text-sm font-semibold text-slate-700 mb-6">Fluxo de Aprovação</h4>
                   <div className="relative flex items-center justify-between px-4">
                     <div className="absolute left-0 top-4 transform -translate-y-1/2 w-full h-1 bg-slate-100 -z-10 rounded-full" />
@@ -484,7 +484,7 @@ export default function ProjectsPage() {
                             {step.label}
                           </span>
                           {approvalInfo && (
-                            <div className="absolute top-24 flex flex-col items-center w-40 text-center z-20">
+                        <div className="absolute top-24 flex flex-col items-center w-40 text-center z-20">
                               <span className="text-sm font-bold text-slate-700 leading-tight">{approvalInfo.user}</span>
                               <span className="text-xs text-slate-500 leading-tight">{new Date(approvalInfo.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                             </div>

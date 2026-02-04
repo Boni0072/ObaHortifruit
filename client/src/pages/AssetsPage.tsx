@@ -397,12 +397,60 @@ export default function AssetsPage() {
 
   const totalAssetsValue = filteredAssets?.reduce((acc, asset) => acc + getAssetValue(asset), 0) || 0;
 
+  const handleExportExcel = () => {
+    if (!filteredAssets || filteredAssets.length === 0) {
+      toast.error("Não há ativos para exportar.");
+      return;
+    }
+
+    const data = filteredAssets.map(asset => {
+      const project = projects?.find(p => String(p.id) === String(asset.projectId));
+      const ccCode = typeof asset.costCenter === 'object' ? (asset.costCenter as any)?.code : asset.costCenter;
+      const cc = costCenters?.find((c: any) => c.code === ccCode);
+      const ccDisplay = cc ? `${cc.code} - ${cc.name}` : (ccCode || "");
+
+      return {
+        "Número do Ativo": asset.assetNumber || "",
+        "Plaqueta": asset.tagNumber || "",
+        "Nome": asset.name || "",
+        "Descrição": asset.description || "",
+        "Valor Original": asset.value ? Number(asset.value) : 0,
+        "Quantidade": asset.quantity ? Number(asset.quantity) : 1,
+        "Data Início": asset.startDate ? new Date(asset.startDate).toLocaleDateString('pt-BR') : "",
+        "Status": asset.status ? asset.status.replace('_', ' ') : "",
+        "Obra": project?.name || "",
+        "Centro de Custo": ccDisplay,
+        "Classe do Ativo": asset.assetClass || "",
+        "Vida Útil (Fiscal)": asset.usefulLife || "",
+        "Vida Útil (Societária)": asset.corporateUsefulLife || "",
+        "Conta Contábil": asset.accountingAccount || "",
+        "Conta Depreciação": asset.depreciationAccountCode || "",
+        "Conta Amortização": asset.amortizationAccountCode || "",
+        "Conta Resultado": asset.resultAccountCode || "",
+        "Notas": asset.notes || ""
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wscols = Object.keys(data[0]).map(key => ({ wch: Math.max(key.length, 15) }));
+    ws['!cols'] = wscols;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Ativos");
+    XLSX.writeFile(wb, `ativos_em_andamento_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast.success("Relatório exportado com sucesso!");
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-slate-700">Ativos em Andamento</h1>
         
         <div className="flex gap-2">
+            <Button variant="outline" onClick={handleExportExcel}>
+                <Download className="mr-2 h-4 w-4" />
+                Exportar Excel
+            </Button>
             <Button variant="outline" onClick={handleDownloadTemplate}>
                 <Download className="mr-2 h-4 w-4" />
                 Template

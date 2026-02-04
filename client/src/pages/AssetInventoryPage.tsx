@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, updateDoc, doc, onSnapshot, writeBatch } from "firebase/firestore";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -32,6 +32,7 @@ interface InventorySchedule {
   results?: InventoryResult[];
   approvedBy?: string;
   approvedAt?: string;
+  createdAt?: string;
 }
 
 const getBase64ImageFromURL = (url: string): Promise<string> => {
@@ -289,7 +290,8 @@ export default function AssetInventoryPage() {
       userIds: selectedUserIds,
       date: scheduleDate,
       notes,
-      status: 'pending'
+      status: 'pending',
+      createdAt: new Date().toISOString()
     };
     
     await addDoc(collection(db, "inventory_schedules"), newScheduleData);

@@ -37,7 +37,6 @@ const parseDate = (value: any): Date => {
 
 export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'budget' | 'assets'>('budget');
-  const [, setLocation] = useLocation();
 
   const [projects, setProjects] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -403,18 +402,21 @@ export default function Dashboard() {
       <div className="flex items-center gap-4">
         <Button 
           variant="outline" 
-          onClick={() => setViewMode(prev => {
-            if (prev === 'budget') return 'assets';
-            return 'budget';
-          })}
+          onClick={() => setViewMode(prev => (prev === 'budget' ? 'assets' : 'budget'))}
           className="p-2 h-auto rounded-full transition-all duration-300 hover:shadow-md group border-slate-200 hover:border-blue-300 hover:bg-blue-50/30"
           title="Alternar Visão (Budget -> Ativos)"
         >
           <div className="animate-bounce">
-            <img src="/oba.svg" alt="Alternar" className={`w-12 h-12 transition-all duration-700 ease-in-out group-hover:scale-110 ${viewMode !== 'budget' ? 'rotate-[360deg]' : 'rotate-0'}`} />
+            <img 
+              src="/oba.svg" 
+              alt="Alternar Visão" 
+              className={`w-12 h-12 transition-all duration-700 ease-in-out group-hover:scale-110 ${viewMode !== 'budget' ? 'rotate-[360deg]' : 'rotate-0'}`} 
+            />
           </div>
         </Button>
-        <h1 className="text-3xl font-bold text-slate-700">{viewMode === 'budget' ? 'Dashboard: Controle Orçamentário' : 'Dashboard: Gestão de Ativos'}</h1>
+        <h1 className="text-3xl font-bold text-slate-700">
+          {viewMode === 'budget' ? 'Dashboard: Controle Orçamentário' : 'Dashboard: Gestão de Ativos'}
+        </h1>
       </div>
 
       {/* Seção Controle de Budget (FP&A) */}
@@ -641,7 +643,7 @@ export default function Dashboard() {
 
       {/* Seção Imobilizado */}
       {viewMode === 'assets' && (
-      <div className="space-y-4">
+      <div className="space-y-4 animate-in fade-in duration-500">
         <div className="flex items-center gap-2">
             <div className="p-2 bg-orange-100 rounded-lg">
                 <Package className="w-6 h-6 text-orange-600" />

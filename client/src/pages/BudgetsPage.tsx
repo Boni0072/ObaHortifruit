@@ -186,12 +186,19 @@ const ProjectWorkflow = ({ project, onUpdateStatus, compact }: { project: any, o
         </h4>
       </div>
       
-      <div className="relative flex items-center justify-between mb-10 px-4">
+      <div className="relative flex items-center justify-between mb-36 px-4">
         <div className="absolute left-0 top-4 transform -translate-y-1/2 w-full h-1 bg-slate-100 -z-10 rounded-full" />
         <div className={`absolute left-0 top-4 transform -translate-y-1/2 h-1 -z-10 transition-all duration-500 rounded-full ${effectiveIndex >= 0 ? steps[effectiveIndex].color : 'bg-blue-600'}`} style={{ width: effectiveIndex === -1 ? '0%' : `${(effectiveIndex / (steps.length - 1)) * 100}%` }} />
-        {steps.map((step, index) => {
+        {steps.map((step, index) => { 
           const isCompletedStep = index <= effectiveIndex;
           const isCurrent = index === effectiveIndex;
+          
+          // Busca a aprovação que levou à PRÓXIMA etapa (quem aprovou esta etapa)
+          const nextStep = steps[index + 1];
+          const approvalInfo = nextStep 
+            ? project.approvalHistory?.slice().reverse().find((h: any) => h.status === nextStep.id)
+            : null;
+
           return (
             <div key={step.id} className="flex flex-col items-center group relative">
               <div 
@@ -216,6 +223,12 @@ const ProjectWorkflow = ({ project, onUpdateStatus, compact }: { project: any, o
               >
                 {step.label}
               </span>
+              {approvalInfo && (
+                <div className="absolute top-24 flex flex-col items-center w-32 text-center">
+                  <span className="text-[10px] font-bold text-slate-700 leading-tight">{approvalInfo.user}</span>
+                  <span className="text-[9px] text-slate-500 leading-tight">{new Date(approvalInfo.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+              )}
             </div>
           );
         })}
@@ -914,7 +927,7 @@ function ProjectBudgetRow({ project, onDataLoaded }: { project: ProjectType, onD
                         {step.label}
                       </span>
                       {approvalInfo && (
-                        <div className="absolute top-24 flex flex-col items-center w-40 text-center z-20">
+                        <div className="absolute top-16 flex flex-col items-center w-40 text-center z-20">
                           <span className="text-sm font-bold text-slate-700 leading-tight">{approvalInfo.user}</span>
                           <span className="text-xs text-slate-500 leading-tight">{new Date(approvalInfo.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
@@ -1452,7 +1465,7 @@ export default function BudgetsPage() {
             </DialogHeader>
             {viewProject && (
               <div className="space-y-4">
-                <div className="py-4">
+                <div className="py-4 mb-36">
                   <h4 className="text-sm font-semibold text-slate-700 mb-6">Fluxo de Aprovação</h4>
                   <div className="relative flex items-center justify-between px-4">
                     <div className="absolute left-0 top-4 transform -translate-y-1/2 w-full h-1 bg-slate-100 -z-10 rounded-full" />
@@ -1489,10 +1502,10 @@ export default function BudgetsPage() {
                             {step.label}
                           </span>
                           {approvalInfo && (
-                            <div className="absolute top-14 flex flex-col items-center w-32 text-center">
-                              <span className="text-[10px] font-bold text-slate-700 leading-tight">{approvalInfo.user}</span>
-                              <span className="text-[9px] text-slate-500 leading-tight">{new Date(approvalInfo.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                            </div>
+                        <div className="absolute top-24 flex flex-col items-center w-40 text-center z-20">
+                            <span className="text-[10px] font-bold text-slate-700 leading-tight">{approvalInfo.user}</span>
+                            <span className="text-[9px] text-slate-500 leading-tight">{new Date(approvalInfo.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
                           )}
                         </div>
                       );

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "firebase/firestore";
 import { Card } from "@/components/ui/card";
@@ -47,6 +47,7 @@ export default function UserPage() {
 
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showSignatureCanvas, setShowSignatureCanvas] = useState(true);
   
   // Estado do formulário
   const [formData, setFormData] = useState({
@@ -55,6 +56,7 @@ export default function UserPage() {
     password: "", // Adicionado campo de senha
     role: "engenharia",
     allowedPages: [] as string[],
+    signature: "",
   });
 
   const resetForm = () => {
@@ -64,8 +66,10 @@ export default function UserPage() {
       password: "", // Resetar campo de senha
       role: "engenharia",
       allowedPages: [],
+      signature: "",
     });
     setEditingId(null);
+    setShowSignatureCanvas(true);
   };
 
   const handleOpenChange = (isOpen: boolean) => {
@@ -80,9 +84,11 @@ export default function UserPage() {
       role: user.role,
       allowedPages: user.allowedPages || [],
       password: "", // Não preencher a senha ao editar por segurança
+      signature: user.signature || "",
     });
     setEditingId(user.id);
     setOpen(true);
+    setShowSignatureCanvas(!user.signature);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -134,6 +140,76 @@ export default function UserPage() {
     });
   };
 
+  // Lógica para o Canvas de Assinatura
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+
+  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement) => {
+    let clientX, clientY;
+    if ('touches' in e) {
+      const touch = e.touches[0];
+      clientX = touch.clientX;
+      clientY = touch.clientY;
+    } else {
+      const mouse = e as React.MouseEvent<HTMLCanvasElement>;
+      clientX = mouse.clientX;
+      clientY = mouse.clientY;
+    }
+    const rect = canvas.getBoundingClientRect();
+    return {
+      offsetX: clientX - rect.left,
+      offsetY: clientY - rect.top
+    };
+  };
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    setIsDrawing(true);
+    const { offsetX, offsetY } = getCoordinates(e, canvas);
+    ctx.beginPath();
+    ctx.moveTo(offsetX, offsetY);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#000';
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const { offsetX, offsetY } = getCoordinates(e, canvas);
+    ctx.lineTo(offsetX, offsetY);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    const canvas = canvasRef.current;
+    if (canvas) {
+        setFormData(prev => ({ ...prev, signature: canvas.toDataURL() }));
+    }
+  };
+
+  const clearSignature = () => {
+      setFormData(prev => ({ ...prev, signature: "" }));
+      setShowSignatureCanvas(true);
+      setTimeout(() => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+            const ctx = canvas.getContext("2d");
+            ctx?.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }, 0);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -178,6 +254,44 @@ export default function UserPage() {
                   placeholder="Deixe em branco para manter a senha atual"
                   minLength={6}
                 />
+              </div>
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Assinatura Digital</Label>
+                { !showSignatureCanvas && formData.signature ? (
+                  <div className="border rounded-md p-4 flex flex-col items-center gap-4 bg-slate-50">
+                    {formData.signature.startsWith('data:image') ? (
+                      <img src={formData.signature} alt="Assinatura" className="max-h-24 border bg-white rounded" />
+                    ) : (
+                      <div className="text-lg font-script p-4 border bg-white w-full text-center">{formData.signature}</div>
+                    )}
+                    <Button type="button" variant="outline" size="sm" onClick={clearSignature} className="text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50">
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Remover / Nova Assinatura
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="border rounded-md bg-white overflow-hidden shadow-sm">
+                    <canvas
+                      ref={canvasRef}
+                      width={450}
+                      height={150}
+                      className="w-full h-[150px] cursor-crosshair touch-none bg-white"
+                      onMouseDown={startDrawing}
+                      onMouseMove={draw}
+                      onMouseUp={stopDrawing}
+                      onMouseLeave={stopDrawing}
+                      onTouchStart={startDrawing}
+                      onTouchMove={draw}
+                      onTouchEnd={stopDrawing}
+                    />
+                    <div className="bg-slate-50 border-t p-2 flex justify-between items-center text-xs text-muted-foreground">
+                      <span>Desenhe sua assinatura acima</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={clearSignature}>
+                        Limpar
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <Label className="text-sm font-medium">Perfil</Label>
@@ -243,6 +357,7 @@ export default function UserPage() {
               <TableRow>
                 <TableHead>Nome</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Assinatura</TableHead>
                 <TableHead>Perfil</TableHead>
                 <TableHead>Acesso</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
@@ -253,6 +368,13 @@ export default function UserPage() {
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm">
+                    {user.signature && user.signature.startsWith('data:image') ? (
+                      <img src={user.signature} alt="Assinatura" className="h-8 border bg-white rounded" />
+                    ) : (
+                      user.signature || "-"
+                    )}
+                  </TableCell>
                   <TableCell>
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                       <Shield size={12} />

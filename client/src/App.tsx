@@ -15,6 +15,7 @@ import UserPage from "./pages/UserPage";
 import Login from "./pages/Login";
 import AssetInventoryPage from "./pages/AssetInventoryPage";
 import ReportsPage from "./pages/ReportsPage";
+import AssetDepreciationPage from "./pages/AssetDepreciationPage";
 
 // App Router Configuration
 function Router() {
