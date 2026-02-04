@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc, addDoc, query, where } from "firebase/firestore";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
@@ -483,7 +483,7 @@ function ExpenseRow({ expense, accountingAccounts, assets, onSave, onOpenCreateA
         assetId: finalAssetId,
         description: expense.description,
         amount: String(expense.amount),
-        date: expense.date ? new Date(expense.date) : new Date(),
+        date: expense.date, // Mantém o formato original (Timestamp ou string) para o updateDoc processar ou converter se necessário
         category: expense.category || "",
         notes: expense.notes || "",
       };
@@ -614,7 +614,16 @@ function ProjectBudgetRow({ project, onDataLoaded }: { project: ProjectType, onD
   const { user } = useAuth();
   const { data: assets } = trpc.assets.list.useQuery({ projectId: String(project.id) });
   const { data: budgets } = trpc.budgets.listByProject.useQuery({ projectId: project.id });
-  const { data: expenses, refetch: refetchExpenses } = trpc.expenses.listByProject.useQuery({ projectId: String(project.id) });
+  
+  const [expenses, setExpenses] = useState<any[]>([]);
+  useEffect(() => {
+    const q = query(collection(db, "expenses"), where("projectId", "==", String(project.id)));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setExpenses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, [project.id]);
+
   const { data: accountingAccounts } = trpc.accounting.listAccounts.useQuery();
 
   const monthlyEvolution = useMemo(() => {
@@ -623,7 +632,12 @@ function ProjectBudgetRow({ project, onDataLoaded }: { project: ProjectType, onD
     
     expenses.forEach((expense) => {
       if (!expense.date) return;
-      const date = new Date(expense.date);
+      
+      let date: Date;
+      // Tratamento para Timestamp do Firestore vs String ISO
+      if (expense.date?.toDate) date = expense.date.toDate();
+      else date = new Date(expense.date);
+
       if (isNaN(date.getTime())) return;
       
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -659,7 +673,6 @@ function ProjectBudgetRow({ project, onDataLoaded }: { project: ProjectType, onD
   const itemPrincipal = assetNumbers || (budgets?.[0] as any)?.description || "N/A";
 
   const utils = trpc.useUtils();
-  const updateExpenseMutation = trpc.expenses.update.useMutation();
 
   const [createAssetOpen, setCreateAssetOpen] = useState(false);
   const [assetCreationCallback, setAssetCreationCallback] = useState<((id: string | number) => void) | null>(null);
@@ -789,11 +802,12 @@ function ProjectBudgetRow({ project, onDataLoaded }: { project: ProjectType, onD
                             accountingAccounts={accountingAccounts || []} 
                             assets={assets || []} 
                             onSave={async (data) => {
-                              console.log("Data being sent to updateExpenseMutation:", data);
-                              // Aguarda a mutação
-                              await updateExpenseMutation.mutateAsync(data);
-                              // Aguarda a invalidação e refetch da query
-                              await utils.expenses.listByProject.invalidate({ projectId: String(project.id) });
+                              const { id, ...updateData } = data;
+                              // Garante que a data seja salva corretamente se foi alterada
+                              if (updateData.date instanceof Date) {
+                                updateData.date = updateData.date.toISOString();
+                              }
+                              await updateDoc(doc(db, "expenses", id), updateData);
                               toast.success("Despesa atualizada");
                             }}
                             onOpenCreateAsset={handleOpenCreateAsset}
@@ -1002,7 +1016,6 @@ export default function BudgetsPage() {
     projectId: "",
   });
 
-  const createExpenseMutation = trpc.expenses.create.useMutation();
   const fetchNfeMutation = trpc.expenses.fetchNfeData.useMutation();
 
   const { data: assetsForDialog } = trpc.assets.list.useQuery(
@@ -1075,7 +1088,7 @@ export default function BudgetsPage() {
     const isExpenseBlocked = selectedProjectForExpense?.status === 'concluido' || selectedProjectForExpense?.status === 'rejeitado';
 
     if (isExpenseBlocked) {
-      toast.error("Este projeto já foi aprovado e as despesas estão bloqueadas.");
+      toast.error("Este projeto está concluído ou rejeitado e as despesas estão bloqueadas.");
       return;
     }
 
@@ -1090,7 +1103,7 @@ export default function BudgetsPage() {
         finalAssetId = expenseFormData.assetId;
       }
 
-      await createExpenseMutation.mutateAsync({
+      await addDoc(collection(db, "expenses"), {
         projectId: expenseFormData.projectId,
         description: expenseFormData.description,
         amount: expenseFormData.amount,
@@ -1100,10 +1113,11 @@ export default function BudgetsPage() {
         date: new Date(expenseFormData.date),
         notes: expenseFormData.notes || "",
         assetId: finalAssetId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       });
       toast.success("Despesa criada com sucesso!");
       setOpenExpenseDialog(false);
-      utils.expenses.listByProject.invalidate(); // Refresh expenses in rows
     } catch (error: any) {
       toast.error(error.message || "Erro ao criar despesa");
     }
@@ -1239,7 +1253,6 @@ export default function BudgetsPage() {
         if (successCount > 0) toast.success(`${successCount} despesas importadas!`);
         if (errorCount > 0) toast.error(`${errorCount} falhas na importação.`);
         
-        utils.expenses.listByProject.invalidate();
       } catch (error) {
         console.error("Erro na importação:", error);
         toast.error("Erro ao processar o arquivo.");
@@ -1424,8 +1437,8 @@ export default function BudgetsPage() {
                 </div>
               </div>
               <DialogFooter className="pt-4">
-                <Button type="submit" className="w-full" disabled={createExpenseMutation.isPending || isExpenseBlocked}>
-                  {createExpenseMutation.isPending ? "Salvando..." : "Registrar Despesa"}
+                <Button type="submit" className="w-full" disabled={isExpenseBlocked}>
+                  Registrar Despesa
                 </Button>
               </DialogFooter>
             </form>

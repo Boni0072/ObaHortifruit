@@ -47,7 +47,9 @@ export default function ProjectsPage() {
     costCenter: "",
     plannedCapex: "",
     plannedOpex: "",
+    monthlyDistribution: Array(12).fill(""),
   });
+  const [distributionType, setDistributionType] = useState<'value' | 'percentage'>('value');
 
   const statusColors: { [key: string]: string } = {
     aguardando_classificacao: 'bg-blue-100 text-blue-800',
@@ -71,8 +73,9 @@ export default function ProjectsPage() {
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
     if (!isOpen) {
-      setFormData({ name: "", description: "", startDate: new Date().toISOString().split("T")[0], estimatedEndDate: "", location: "", costCenter: "", plannedCapex: "", plannedOpex: "" });
+      setFormData({ name: "", description: "", startDate: new Date().toISOString().split("T")[0], estimatedEndDate: "", location: "", costCenter: "", plannedCapex: "", plannedOpex: "", monthlyDistribution: Array(12).fill("") });
       setEditingId(null);
+      setDistributionType('value');
     }
   };
 
@@ -98,6 +101,7 @@ export default function ProjectsPage() {
       costCenter: project.costCenter || "",
       plannedCapex: project.plannedCapex !== undefined ? String(project.plannedCapex) : (project.plannedValue ? String(project.plannedValue) : ""),
       plannedOpex: project.plannedOpex !== undefined ? String(project.plannedOpex) : "",
+      monthlyDistribution: project.monthlyDistribution ? project.monthlyDistribution.map(String) : Array(12).fill(""),
     });
     setEditingId(project.id);
     setOpen(true);
@@ -128,6 +132,7 @@ export default function ProjectsPage() {
           plannedCapex: formData.plannedCapex ? Number(formData.plannedCapex) : 0,
           plannedOpex: formData.plannedOpex ? Number(formData.plannedOpex) : 0,
           plannedValue: plannedValue,
+          monthlyDistribution: formData.monthlyDistribution.map(v => Number(v) || 0),
         });
         toast.success("Obra atualizada com sucesso!");
       } else {
@@ -141,12 +146,13 @@ export default function ProjectsPage() {
           plannedCapex: formData.plannedCapex ? Number(formData.plannedCapex) : 0,
           plannedOpex: formData.plannedOpex ? Number(formData.plannedOpex) : 0,
           plannedValue: plannedValue,
+          monthlyDistribution: formData.monthlyDistribution.map(v => Number(v) || 0),
           status: 'aguardando_classificacao',
           createdAt: new Date().toISOString()
         });
         toast.success("Obra criada com sucesso!");
       }
-      setFormData({ name: "", description: "", startDate: new Date().toISOString().split("T")[0], estimatedEndDate: "", location: "", costCenter: "", plannedCapex: "", plannedOpex: "" });
+      setFormData({ name: "", description: "", startDate: new Date().toISOString().split("T")[0], estimatedEndDate: "", location: "", costCenter: "", plannedCapex: "", plannedOpex: "", monthlyDistribution: Array(12).fill("") });
       setEditingId(null);
       setOpen(false);
     } catch (error) {
@@ -242,6 +248,9 @@ export default function ProjectsPage() {
     reader.readAsArrayBuffer(file);
   };
 
+  const totalPlanned = (Number(formData.plannedCapex) || 0) + (Number(formData.plannedOpex) || 0);
+  const totalDistributed = formData.monthlyDistribution.reduce((acc, val) => acc + (Number(val) || 0), 0);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -277,7 +286,7 @@ export default function ProjectsPage() {
               Nova Obra
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingId ? "Editar Obra" : "Criar Nova Obra"}</DialogTitle>
             </DialogHeader>
@@ -369,8 +378,58 @@ export default function ProjectsPage() {
                 <div>
                   <label className="text-sm font-medium">Total Planejado</label>
                   <div className="h-10 px-3 py-2 rounded-md border border-input bg-slate-100 text-sm flex items-center font-medium text-slate-700">
-                    {formatCurrency((Number(formData.plannedCapex) || 0) + (Number(formData.plannedOpex) || 0))}
+                    {formatCurrency(totalPlanned)}
                   </div>
+                </div>
+              </div>
+              <div className="border rounded-md p-4 bg-slate-50">
+                <div className="flex justify-between items-center mb-3">
+                  <h4 className="font-medium text-sm text-slate-700">Distribuição Mensal (R$)</h4>
+                  <span className="text-xs text-slate-500">
+                    Total Distribuído: {distributionType === 'value' ? formatCurrency(totalDistributed) : `${totalPlanned > 0 ? ((totalDistributed / totalPlanned) * 100).toFixed(1) : 0}%`}
+                  </span>
+                  <div className="w-32">
+                    <Select
+                      value={distributionType}
+                      onValueChange={(v) => setDistributionType(v as 'value' | 'percentage')}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="value">Valor (R$)</SelectItem>
+                        <SelectItem value="percentage">Percentual (%)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                  {["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].map((month, index) => (
+                    <div key={index}>
+                      <label className="text-[10px] font-medium text-slate-500 uppercase">{month}</label>
+                      <Input
+                        type="number"
+                        step={distributionType === 'value' ? "0.01" : "0.1"}
+                        value={
+                          distributionType === 'value'
+                            ? formData.monthlyDistribution[index]
+                            : totalPlanned > 0
+                              ? ((Number(formData.monthlyDistribution[index]) || 0) / totalPlanned * 100).toFixed(2)
+                              : "0"
+                        }
+                        onChange={(e) => {
+                          const newDist = [...formData.monthlyDistribution];
+                          const inputValue = e.target.value;
+                          const val = distributionType === 'value' ? inputValue : ((Number(inputValue) / 100) * totalPlanned).toFixed(2);
+                          newDist[index] = val;
+                          setFormData({ ...formData, monthlyDistribution: newDist });
+                        }}
+                        placeholder={distributionType === 'value' ? "0,00" : "0%"}
+                        disabled={distributionType === 'percentage' && totalPlanned <= 0}
+                        className="h-8 text-xs bg-white"
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
               <Button type="submit" className="w-full">

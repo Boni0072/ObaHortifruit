@@ -6,13 +6,14 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Search, Download, QrCode, ClipboardList, Calendar as CalendarIcon, Users, CheckCircle2, AlertCircle, PlayCircle, Check } from "lucide-react";
+import { Loader2, Search, Download, QrCode, ClipboardList, Calendar as CalendarIcon, Users, CheckCircle2, AlertCircle, PlayCircle, Check, XCircle } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface InventoryResult {
   assetId: string;
@@ -29,7 +30,31 @@ interface InventorySchedule {
   notes: string;
   status: 'pending' | 'waiting_approval' | 'completed';
   results?: InventoryResult[];
+  approvedBy?: string;
+  approvedAt?: string;
 }
+
+const getBase64ImageFromURL = (url: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.setAttribute("crossOrigin", "anonymous");
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        const dataURL = canvas.toDataURL("image/png");
+        resolve(dataURL);
+      } else {
+        reject(new Error("Canvas context is null"));
+      }
+    };
+    img.onerror = (error) => reject(error);
+    img.src = url;
+  });
+};
 
 export default function AssetInventoryPage() {
   const { user: authUser } = useAuth();
@@ -54,6 +79,7 @@ export default function AssetInventoryPage() {
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [performingSchedule, setPerformingSchedule] = useState<InventorySchedule | null>(null);
+  const [reviewingSchedule, setReviewingSchedule] = useState<InventorySchedule | null>(null);
   const [executionData, setExecutionData] = useState<Record<string, { verified: boolean; costCenter: string }>>({});
   const [schedules, setSchedules] = useState<InventorySchedule[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
@@ -132,6 +158,10 @@ export default function AssetInventoryPage() {
     )
   );
 
+  const completedSchedules = schedules
+    .filter(s => s.status === 'completed')
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
   const handleApproveInventory = async (schedule: InventorySchedule) => {
     try {
       const batch = writeBatch(db);
@@ -151,13 +181,28 @@ export default function AssetInventoryPage() {
 
       // Atualiza o status do agendamento para concluído
       const scheduleRef = doc(db, "inventory_schedules", schedule.id);
-      batch.update(scheduleRef, { status: 'completed' });
+      batch.update(scheduleRef, { 
+        status: 'completed',
+        approvedBy: user?.name || "Administrador",
+        approvedAt: new Date().toISOString()
+      });
 
       await batch.commit();
       toast.success("Inventário aprovado e processado com sucesso!");
     } catch (error) {
       console.error("Erro ao aprovar inventário:", error);
       toast.error("Erro ao processar aprovação.");
+    }
+  };
+
+  const handleRejectInventory = async (schedule: InventorySchedule) => {
+    try {
+      const scheduleRef = doc(db, "inventory_schedules", schedule.id);
+      await updateDoc(scheduleRef, { status: 'pending' });
+      toast.success("Inventário rejeitado e retornado para pendente.");
+      setReviewingSchedule(null);
+    } catch (error) {
+      toast.error("Erro ao rejeitar inventário.");
     }
   };
 
@@ -260,27 +305,151 @@ export default function AssetInventoryPage() {
     setNotes("");
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!filteredAssets) return;
     
-    const data = filteredAssets.map(asset => {
-      const project = projects?.find(p => p.id === asset.projectId);
-      return {
-        "Nº Ativo": asset.assetNumber,
-        "Plaqueta": asset.tagNumber,
-        "Nome": asset.name,
-        "Descrição": asset.description,
-        "Valor": asset.value,
-        "Data Aquisição": asset.startDate ? new Date(asset.startDate).toLocaleDateString() : "",
-        "Status": asset.status,
-        "Obra/Local": project?.name || "N/A"
-      };
-    });
+    try {
+      const doc = new jsPDF();
+      let logoData: string | null = null;
+      try {
+        logoData = await getBase64ImageFromURL("/oba.svg");
+      } catch (error) {
+        console.warn("Logo não carregado:", error);
+      }
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Inventário");
-    XLSX.writeFile(wb, "inventario_ativos.xlsx");
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      const addHeaderAndWatermark = (data: any) => {
+        // Watermark
+        if (logoData) {
+          doc.saveGraphicsState();
+          doc.setGState(new (doc as any).GState({ opacity: 0.1 }));
+          const wmWidth = 80;
+          const wmHeight = 40;
+          const wmX = (pageWidth - wmWidth) / 2;
+          const wmY = (pageHeight - wmHeight) / 2;
+          doc.addImage(logoData, 'PNG', wmX, wmY, wmWidth, wmHeight);
+          doc.restoreGraphicsState();
+
+          // Header
+          doc.addImage(logoData, 'PNG', 14, 10, 25, 15);
+        }
+
+        doc.setFontSize(16);
+        doc.setTextColor(40);
+        doc.text("Relatório Geral de Ativos", pageWidth - 14, 18, { align: 'right' });
+        doc.setFontSize(9);
+        doc.setTextColor(100);
+        doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, pageWidth - 14, 24, { align: 'right' });
+        
+        doc.setDrawColor(200);
+        doc.line(14, 30, pageWidth - 14, 30);
+      };
+
+      const tableData = filteredAssets.map(asset => {
+        const project = projects?.find(p => p.id === asset.projectId);
+        return [
+          asset.assetNumber || "-",
+          asset.tagNumber || "-",
+          asset.name || "-",
+          asset.status?.replace('_', ' ') || "-",
+          project?.name || "N/A",
+          asset.value ? Number(asset.value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : "-"
+        ];
+      });
+
+      autoTable(doc, {
+        head: [["Nº Ativo", "Plaqueta", "Nome", "Status", "Obra/Local", "Valor"]],
+        body: tableData,
+        startY: 35,
+        didDrawPage: addHeaderAndWatermark,
+        styles: { fontSize: 8, cellPadding: 3 },
+        headStyles: { fillColor: [22, 163, 74], textColor: 255, fontStyle: 'bold' }, // Green-600 like
+        alternateRowStyles: { fillColor: [240, 253, 244] },
+        margin: { top: 35 }
+      });
+
+      doc.save("inventario_ativos.pdf");
+      toast.success("Relatório PDF gerado com sucesso!");
+    } catch (error) {
+      console.error("Erro ao gerar PDF:", error);
+      toast.error("Erro ao gerar PDF.");
+    }
+  };
+
+  const handleExportScheduleResult = async (schedule: InventorySchedule) => {
+    if (!schedule.results) return;
+    
+    try {
+      const doc = new jsPDF();
+      let logoData: string | null = null;
+      try {
+        logoData = await getBase64ImageFromURL("/oba.svg");
+      } catch (error) {
+        console.warn("Logo não carregado:", error);
+      }
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      const addHeaderAndWatermark = (data: any) => {
+        // Watermark
+        if (logoData) {
+          doc.saveGraphicsState();
+          doc.setGState(new (doc as any).GState({ opacity: 0.1 }));
+          const wmWidth = 80;
+          const wmHeight = 40;
+          const wmX = (pageWidth - wmWidth) / 2;
+          const wmY = (pageHeight - wmHeight) / 2;
+          doc.addImage(logoData, 'PNG', wmX, wmY, wmWidth, wmHeight);
+          doc.restoreGraphicsState();
+
+          // Header
+          doc.addImage(logoData, 'PNG', 14, 10, 25, 15);
+        }
+
+        doc.setFontSize(16);
+        doc.setTextColor(40);
+        doc.text("Relatório de Inventário Concluído", pageWidth - 14, 18, { align: 'right' });
+        
+        doc.setFontSize(10);
+        doc.setTextColor(80);
+        doc.text(`Data do Inventário: ${new Date(schedule.date).toLocaleDateString('pt-BR')}`, pageWidth - 14, 24, { align: 'right' });
+        doc.text(`Aprovado Por: ${schedule.approvedBy || "-"}`, pageWidth - 14, 29, { align: 'right' });
+        doc.text(`Data Aprovação: ${schedule.approvedAt ? new Date(schedule.approvedAt).toLocaleString('pt-BR') : "-"}`, pageWidth - 14, 34, { align: 'right' });
+
+        doc.setDrawColor(200);
+        doc.line(14, 38, pageWidth - 14, 38);
+      };
+
+      const tableData = schedule.results.map(result => {
+        const asset = assets.find(a => a.id === result.assetId);
+        return [
+          asset?.name || "Ativo Removido",
+          asset?.tagNumber || "-",
+          result.verified ? "Sim" : "Não",
+          result.newCostCenter || "Mantido"
+        ];
+      });
+
+      autoTable(doc, {
+        head: [["Ativo", "Plaqueta", "Verificado", "Novo Centro de Custo"]],
+        body: tableData,
+        startY: 45,
+        didDrawPage: addHeaderAndWatermark,
+        styles: { fontSize: 9, cellPadding: 3 },
+        headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' }, // Blue-600
+        alternateRowStyles: { fillColor: [239, 246, 255] },
+        margin: { top: 45 }
+      });
+
+      doc.save(`inventario_concluido_${schedule.date}.pdf`);
+      toast.success("Relatório PDF gerado com sucesso!");
+    } catch (error) {
+      console.error("Erro ao gerar PDF:", error);
+      toast.error("Erro ao gerar PDF.");
+    }
   };
 
   return (
@@ -404,10 +573,10 @@ export default function AssetInventoryPage() {
                   <Button 
                     size="sm" 
                     className="bg-blue-600 hover:bg-blue-700 text-white"
-                    onClick={() => handleApproveInventory(schedule)}
+                    onClick={() => setReviewingSchedule(schedule)}
                   >
                     <Check className="w-4 h-4 mr-2" />
-                    Aprovar e Atualizar
+                    Verificar
                   </Button>
                 </div>
               ))}
@@ -481,6 +650,7 @@ export default function AssetInventoryPage() {
                   <TableHead>Plaqueta</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Responsável</TableHead>
                   <TableHead className="text-right">Valor</TableHead>
                   <TableHead className="text-center">Ações</TableHead>
                 </TableRow>
@@ -521,6 +691,25 @@ export default function AssetInventoryPage() {
                         {asset.status?.replace('_', ' ')}
                       </span>
                     </TableCell>
+                    <TableCell>
+                      {activeSchedule ? (
+                        <div className="flex flex-col gap-1">
+                          {activeSchedule.userIds.map(uid => {
+                            const responsibleUser = users.find(u => String(u.id) === String(uid));
+                            return (
+                              <span key={uid} className="text-[13px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 w-fit whitespace-nowrap">
+                                {responsibleUser?.name || "Usuário..."}
+                              </span>
+                            );
+                          })}
+                          <span className="text-[13px] text-muted-foreground mt-0.5">
+                            {new Date(activeSchedule.date).toLocaleDateString('pt-BR')}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       {asset.value ? Number(asset.value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : "-"}
                     </TableCell>
@@ -543,7 +732,7 @@ export default function AssetInventoryPage() {
                 )})}
                 {(!filteredAssets || filteredAssets.length === 0) && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       Nenhum ativo encontrado.
                     </TableCell>
                   </TableRow>
@@ -551,6 +740,59 @@ export default function AssetInventoryPage() {
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Histórico de Inventários Concluídos */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ClipboardList className="h-5 w-5" />
+            Histórico de Inventários Concluídos
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Data</TableHead>
+                <TableHead>Responsáveis</TableHead>
+                <TableHead>Aprovado Por</TableHead>
+                <TableHead>Data Aprovação</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {completedSchedules.map(schedule => (
+                <TableRow key={schedule.id}>
+                  <TableCell>{new Date(schedule.date).toLocaleDateString('pt-BR')}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      {schedule.userIds.map(uid => {
+                        const u = users.find(user => String(user.id) === String(uid));
+                        return <span key={uid} className="text-xs text-muted-foreground">{u?.name || "Usuário"}</span>
+                      })}
+                    </div>
+                  </TableCell>
+                  <TableCell>{schedule.approvedBy || "-"}</TableCell>
+                  <TableCell>{schedule.approvedAt ? new Date(schedule.approvedAt).toLocaleString('pt-BR') : "-"}</TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" onClick={() => handleExportScheduleResult(schedule)}>
+                      <Download className="w-4 h-4 mr-2" />
+                      Relatório
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {completedSchedules.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
+                    Nenhum inventário concluído.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 
@@ -630,6 +872,83 @@ export default function AssetInventoryPage() {
               <CheckCircle2 className="mr-2 h-4 w-4" />
               Enviar para Aprovação
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo para Validar/Aprovar Inventário */}
+      <Dialog open={!!reviewingSchedule} onOpenChange={(open) => !open && setReviewingSchedule(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-blue-600" />
+              Validar Inventário
+            </DialogTitle>
+            <DialogDescription>
+              Verifique as alterações apontadas antes de aprovar. As mudanças de centro de custo serão aplicadas aos ativos.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-y-auto py-4">
+             <Table>
+               <TableHeader>
+                 <TableRow>
+                   <TableHead>Ativo</TableHead>
+                   <TableHead className="text-center">Verificado</TableHead>
+                   <TableHead>Centro de Custo (Atual)</TableHead>
+                   <TableHead>Centro de Custo (Novo)</TableHead>
+                 </TableRow>
+               </TableHeader>
+               <TableBody>
+                 {reviewingSchedule?.results?.map((result, index) => {
+                   const asset = assets.find(a => a.id === result.assetId);
+                   const currentCC = typeof asset?.costCenter === 'object' ? (asset.costCenter as any).code : asset?.costCenter || "-";
+                   const newCCCode = result.newCostCenter;
+                   const newCC = costCenters.find(c => c.code === newCCCode);
+                   const newCCLabel = newCC ? `${newCC.code} - ${newCC.name}` : newCCCode;
+                   
+                   const isChange = result.newCostCenter && result.newCostCenter !== currentCC;
+
+                   return (
+                     <TableRow key={index} className={isChange ? "bg-yellow-50" : ""}>
+                       <TableCell>
+                          <div className="font-medium">{asset?.name || "Ativo não encontrado"}</div>
+                          <div className="text-xs text-muted-foreground">{asset?.assetNumber}</div>
+                       </TableCell>
+                       <TableCell className="text-center">
+                          {result.verified ? <CheckCircle2 className="w-5 h-5 text-green-600 mx-auto" /> : <XCircle className="w-5 h-5 text-red-600 mx-auto" />}
+                       </TableCell>
+                       <TableCell>{currentCC}</TableCell>
+                       <TableCell>
+                          {result.newCostCenter ? (
+                              <span className={isChange ? "font-bold text-orange-700" : ""}>
+                                  {newCCLabel}
+                              </span>
+                          ) : (
+                              <span className="text-muted-foreground italic">Mantido</span>
+                          )}
+                       </TableCell>
+                     </TableRow>
+                   );
+                 })}
+               </TableBody>
+             </Table>
+          </div>
+
+          <DialogFooter className="gap-2 pt-4 border-t">
+              <Button variant="destructive" onClick={() => reviewingSchedule && handleRejectInventory(reviewingSchedule)}>
+                  <XCircle className="w-4 h-4 mr-2" />
+                  Rejeitar (Retornar)
+              </Button>
+              <Button className="bg-green-600 hover:bg-green-700" onClick={() => {
+                  if (reviewingSchedule) {
+                    handleApproveInventory(reviewingSchedule);
+                    setReviewingSchedule(null);
+                  }
+              }}>
+                  <Check className="w-4 h-4 mr-2" />
+                  Aprovar e Atualizar
+              </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

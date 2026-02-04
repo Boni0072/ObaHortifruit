@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
-import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend } from 'recharts';
+import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, TrendingUp, DollarSign, Package, Activity, BarChart3, ArrowUpRight, AlertTriangle, TrendingDown, Target, Wallet } from "lucide-react";
@@ -25,6 +25,14 @@ const STATUS_COLORS: Record<string, string> = {
   concluido: '#14b8a6', // teal-500
   pausado: '#ec4899', // pink-500
   sem_status: '#94a3b8' // slate-400
+};
+
+// Helper para processar datas do Firestore (Timestamp) ou Strings ISO
+const parseDate = (value: any): Date => {
+  if (!value) return new Date();
+  if (typeof value.toDate === 'function') return value.toDate(); // Firestore Timestamp
+  if (value instanceof Date) return value;
+  return new Date(value);
 };
 
 export default function Dashboard() {
@@ -204,7 +212,7 @@ export default function Dashboard() {
     
     // Burn Rate (Average monthly expense of current year)
     const currentYear = new Date().getFullYear();
-    const currentYearExpenses = validExpenses.filter(e => new Date(e.date).getFullYear() === currentYear);
+    const currentYearExpenses = validExpenses.filter(e => parseDate(e.date).getFullYear() === currentYear);
     const monthsElapsed = new Date().getMonth() + 1;
     const burnRate = currentYearExpenses.reduce((acc, e) => acc + Number(e.amount || 0), 0) / monthsElapsed;
     const runRate = burnRate * 12;
@@ -238,16 +246,27 @@ export default function Dashboard() {
     // Monthly Evolution (Budget vs Realized)
     const months = Array.from({ length: 12 }, (_, i) => i);
     
-    // Distribuição inteligente do orçamento baseada na duração dos projetos
+    // Distribuição do orçamento
     const monthlyBudgetMap = new Array(12).fill(0);
     
     allProjects.forEach(p => {
+        // Prioriza a distribuição mensal manual se existir
+        if (p.monthlyDistribution && Array.isArray(p.monthlyDistribution)) {
+             p.monthlyDistribution.forEach((val: any, index: number) => {
+                if (index < 12) {
+                    monthlyBudgetMap[index] += Number(val || 0);
+                }
+            });
+            return;
+        }
+
+        // Fallback: Distribuição linear baseada na duração dos projetos
         const planned = getProjectBudget(p);
         if (planned <= 0) return;
 
-        const start = p.startDate ? new Date(p.startDate) : new Date();
+        const start = p.startDate ? parseDate(p.startDate) : new Date();
         // Se não houver data fim, assume fim do ano atual ou +1 ano para projeção
-        const end = p.estimatedEndDate ? new Date(p.estimatedEndDate) : new Date(start.getFullYear() + 1, start.getMonth(), 0);
+        const end = p.estimatedEndDate ? parseDate(p.estimatedEndDate) : new Date(start.getFullYear() + 1, start.getMonth(), 0);
         
         const currentYearStart = new Date(currentYear, 0, 1);
         const currentYearEnd = new Date(currentYear, 11, 31);
@@ -273,7 +292,7 @@ export default function Dashboard() {
     const monthlyEvolution = months.map(monthIndex => {
         const monthName = new Date(currentYear, monthIndex, 1).toLocaleString('pt-BR', { month: 'short' });
         const monthRealized = currentYearExpenses
-            .filter(e => new Date(e.date).getMonth() === monthIndex)
+            .filter(e => parseDate(e.date).getMonth() === monthIndex)
             .reduce((acc, e) => acc + Number(e.amount || 0), 0);
         
         return { name: monthName, realized: monthRealized, budget: monthlyBudgetMap[monthIndex] };
@@ -413,8 +432,8 @@ export default function Dashboard() {
 
             {/* KPIs Principais */}
             <div className="grid md:grid-cols-4 gap-4">
-                <Card className="border-l-4 border-l-blue-500 shadow-sm">
-                    <CardHeader className="pb-2">
+                <Card className="border-l-4 border-l-blue-500 shadow-sm py-3 gap-1">
+                    <CardHeader className="pb-0">
                         <CardTitle className="text-sm font-medium text-slate-500 flex justify-between">
                             Orçamento Total
                             <Wallet className="h-4 w-4 text-blue-500" />
@@ -425,8 +444,8 @@ export default function Dashboard() {
                         <p className="text-xs text-muted-foreground mt-1">Planejado para o período</p>
                     </CardContent>
                 </Card>
-                <Card className={`border-l-4 shadow-sm ${budgetMetrics.consumptionPct > 95 ? 'border-l-red-500' : budgetMetrics.consumptionPct > 80 ? 'border-l-yellow-500' : 'border-l-green-500'}`}>
-                    <CardHeader className="pb-2">
+                <Card className={`border-l-4 shadow-sm py-3 gap-1 ${budgetMetrics.consumptionPct > 95 ? 'border-l-red-500' : budgetMetrics.consumptionPct > 80 ? 'border-l-yellow-500' : 'border-l-green-500'}`}>
+                    <CardHeader className="pb-0">
                         <CardTitle className="text-sm font-medium text-slate-500 flex justify-between">
                             Realizado Acumulado
                             <Activity className="h-4 w-4 text-slate-500" />
@@ -447,8 +466,8 @@ export default function Dashboard() {
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="border-l-4 border-l-purple-500 shadow-sm">
-                    <CardHeader className="pb-2">
+                <Card className="border-l-4 border-l-purple-500 shadow-sm py-3 gap-1">
+                    <CardHeader className="pb-0">
                         <CardTitle className="text-sm font-medium text-slate-500 flex justify-between">
                             Saldo Disponível
                             <TrendingDown className="h-4 w-4 text-purple-500" />
@@ -463,8 +482,8 @@ export default function Dashboard() {
                         </p>
                     </CardContent>
                 </Card>
-                <Card className="border-l-4 border-l-orange-500 shadow-sm">
-                    <CardHeader className="pb-2">
+                <Card className="border-l-4 border-l-orange-500 shadow-sm py-3 gap-1">
+                    <CardHeader className="pb-0">
                         <CardTitle className="text-sm font-medium text-slate-500 flex justify-between">
                             Run Rate (Projeção)
                             <TrendingUp className="h-4 w-4 text-orange-500" />
@@ -481,36 +500,71 @@ export default function Dashboard() {
                 {/* Gráfico de Evolução Mensal */}
                 <Card className="md:col-span-2">
                     <CardHeader>
-                        <CardTitle className="text-base font-semibold text-slate-700">Execução Orçamentária Mensal (Realizado vs Linear)</CardTitle>
+                        <CardTitle className="text-lg font-semibold text-slate-700">Execução Orçamentária Mensal (Planejado vs Realizado)</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="h-[250px] w-full flex items-end justify-between gap-2 pt-4 pb-2 px-2">
-                            {budgetMetrics.monthlyEvolution.map((item, idx) => {
-                                const maxVal = Math.max(...budgetMetrics.monthlyEvolution.map(d => Math.max(d.realized, d.budget)), 1);
-                                const realizedH = (item.realized / maxVal) * 100;
-                                const budgetH = (item.budget / maxVal) * 100;
-                                
-                                return (
-                                    <div key={idx} className="flex flex-col items-center gap-1 w-full h-full justify-end group relative">
-                                        <div className="w-full flex gap-1 items-end justify-center h-full">
-                                            {/* Budget Bar (Background/Ghost) */}
-                                            <div className="w-3 bg-slate-200 rounded-t-sm relative" style={{ height: `${budgetH}%` }} title={`Orçado: ${formatCurrency(item.budget)}`}></div>
-                                            {/* Realized Bar */}
-                                            <div 
-                                                className={`w-3 rounded-t-sm transition-all duration-500 ${item.realized > item.budget ? 'bg-red-400' : 'bg-blue-500'}`} 
-                                                style={{ height: `${realizedH}%` }}
-                                                title={`Realizado: ${formatCurrency(item.realized)}`}
-                                            ></div>
-                                        </div>
-                                        <span className="text-[10px] text-slate-500 uppercase">{item.name}</span>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                        <div className="flex justify-center gap-4 mt-4 text-xs text-slate-500">
-                            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-slate-200"></div> Orçado (Linear)</div>
-                            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-500"></div> Realizado</div>
-                            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-red-400"></div> Acima do Budget</div>
+                        <div className="h-[300px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                    data={budgetMetrics.monthlyEvolution}
+                                    margin={{
+                                        top: 60,
+                                        right: 30,
+                                        left: 20,
+                                        bottom: 5,
+                                    }}
+                                >
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis 
+                                        dataKey="name" 
+                                        axisLine={false} 
+                                        tickLine={false} 
+                                        tick={{ fill: '#64748b', fontSize: 14 }} 
+                                    />
+                                    <YAxis 
+                                        axisLine={false} 
+                                        tickLine={false} 
+                                        tick={{ fill: '#64748b', fontSize: 14 }} 
+                                        tickFormatter={(value) => new Intl.NumberFormat('pt-BR', { notation: "compact", compactDisplay: "short" }).format(value)} 
+                                    />
+                                    <RechartsTooltip
+                                        cursor={{ fill: '#f1f5f9' }}
+                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                        formatter={(value: number) => formatCurrency(value)}
+                                    />
+                                    <Legend 
+                                        wrapperStyle={{ paddingTop: '20px' }}
+                                        payload={[
+                                            { value: 'Planejado', type: 'rect', color: '#cbd5e1' },
+                                            { value: 'Realizado', type: 'rect', color: '#3b82f6' },
+                                            { value: 'Acima do Budget', type: 'rect', color: '#ef4444' }
+                                        ]}
+                                    />
+                                    <Bar dataKey="budget" name="Planejado" fill="#cbd5e1" radius={[4, 4, 0, 0]}>
+                                        <LabelList 
+                                            dataKey="budget" 
+                                            position="top" 
+                                            angle={-90}
+                                            offset={10}
+                                            formatter={(value: number) => value > 0 ? Math.round(value).toLocaleString('pt-BR') : ''} 
+                                            style={{ fill: '#94a3b8', fontSize: 12, textAnchor: 'start' }} 
+                                        />
+                                    </Bar>
+                                    <Bar dataKey="realized" name="Realizado" radius={[4, 4, 0, 0]}>
+                                        {budgetMetrics.monthlyEvolution.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.realized > entry.budget ? '#ef4444' : '#3b82f6'} />
+                                        ))}
+                                        <LabelList 
+                                            dataKey="realized" 
+                                            position="top" 
+                                            angle={-90}
+                                            offset={10}
+                                            formatter={(value: number) => value > 0 ? Math.round(value).toLocaleString('pt-BR') : ''} 
+                                            style={{ fill: '#475569', fontSize: 12, fontWeight: 600, textAnchor: 'start' }} 
+                                        />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
                         </div>
                     </CardContent>
                 </Card>
@@ -518,18 +572,18 @@ export default function Dashboard() {
                 {/* Gráfico de Orçamento por Status */}
                 <Card className="md:col-span-1">
                     <CardHeader className="pb-2">
-                        <CardTitle className="text-base font-semibold text-slate-700">Obras por Status</CardTitle>
+                        <CardTitle className="text-lg font-semibold text-slate-700">Obras por Status</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="h-[300px] w-full relative">
+                        <div className="h-[350px] w-full relative">
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                     <Pie
                                         data={budgetMetrics.projectsByStatus}
                                         cx="50%"
-                                        cy="50%"
-                                        innerRadius={60}
-                                        outerRadius={80}
+                                        cy="45%"
+                                        innerRadius={80}
+                                        outerRadius={110}
                                         paddingAngle={5}
                                         dataKey="value"
                                         label={({ value }) => value}
@@ -545,9 +599,9 @@ export default function Dashboard() {
                                     <Legend layout="horizontal" verticalAlign="bottom" align="center" formatter={(value, entry: any) => <span className="text-xs text-slate-600 ml-1">{budgetMetrics.projectsByStatus.find(i => i.name === value)?.displayName || value}</span>} />
                                 </PieChart>
                             </ResponsiveContainer>
-                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center bg-white/90 w-24 h-24 rounded-full shadow-sm border border-slate-100 pointer-events-none z-10">
-                                <span className="text-4xl font-bold text-slate-700">{projects?.length || 0}</span>
-                                <span className="text-[10px] text-slate-500 font-medium uppercase">Obras</span>
+                            <div className="absolute top-[45%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center bg-white/90 w-24 h-24 rounded-full shadow-sm border border-slate-100 pointer-events-none z-10">
+                                <span className="text-3xl font-bold text-slate-700">{projects?.length || 0}</span>
+                                <span className="text-xs text-slate-500 font-medium uppercase">Obras</span>
                             </div>
                         </div>
                     </CardContent>
@@ -556,22 +610,22 @@ export default function Dashboard() {
                 {/* Tabela de Centros de Custo */}
                 <Card className="md:col-span-1 overflow-hidden flex flex-col">
                     <CardHeader className="pb-2">
-                        <CardTitle className="text-base font-semibold text-slate-700">Performance por Centro de Custo</CardTitle>
+                        <CardTitle className="text-lg font-semibold text-slate-700">Performance por Centro de Custo</CardTitle>
                     </CardHeader>
                     <CardContent className="flex-1 overflow-auto p-0">
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead className="text-xs">Centro de Custo</TableHead>
-                                    <TableHead className="text-xs text-right">Consumo</TableHead>
-                                    <TableHead className="text-xs text-center">Status</TableHead>
+                                    <TableHead className="text-sm">Centro de Custo</TableHead>
+                                    <TableHead className="text-sm text-right">Consumo</TableHead>
+                                    <TableHead className="text-sm text-center">Status</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {budgetMetrics.costCenters.map((cc) => (
                                     <TableRow key={cc.name}>
-                                        <TableCell className="text-xs font-medium">{cc.name}</TableCell>
-                                        <TableCell className="text-xs text-right">{cc.pct.toFixed(0)}%</TableCell>
+                                        <TableCell className="text-sm font-medium">{cc.name}</TableCell>
+                                        <TableCell className="text-sm text-right">{cc.pct.toFixed(0)}%</TableCell>
                                         <TableCell className="text-center">
                                             <div className={`w-3 h-3 rounded-full mx-auto ${cc.status === 'verde' ? 'bg-green-500' : cc.status === 'amarelo' ? 'bg-yellow-400' : 'bg-red-500'}`} title={cc.status} />
                                         </TableCell>
@@ -598,12 +652,12 @@ export default function Dashboard() {
         <div className="grid md:grid-cols-3 gap-6">
             <div className="md:col-span-2 space-y-6">
                 <div className="grid md:grid-cols-2 gap-6">
-                    <Card className="bg-gradient-to-br from-white to-slate-50">
-                        <CardHeader className="pb-2">
+                    <Card className="bg-gradient-to-br from-white to-slate-50 py-3 gap-1 shadow-sm">
+                        <CardHeader className="pb-0">
                             <CardTitle className="text-sm font-medium text-slate-500">Valor Total em Ativos</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-3xl font-bold text-slate-800">{formatCurrency(totalAssetsValue)}</div>
+                            <div className="text-2xl font-bold text-slate-800">{formatCurrency(totalAssetsValue)}</div>
                             <div className="flex items-center gap-2 mt-1">
                                 <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium flex items-center">
                                     <ArrowUpRight className="w-3 h-3 mr-1" /> Ativos
@@ -612,30 +666,30 @@ export default function Dashboard() {
                         </CardContent>
                     </Card>
 
-                    <Card>
-                        <CardHeader className="pb-2">
+                    <Card className="py-3 gap-1 shadow-sm">
+                        <CardHeader className="pb-0">
                             <CardTitle className="text-sm font-medium text-slate-500">Status dos Ativos</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="flex justify-between items-end mb-2">
+                            <div className="flex justify-between items-end mb-1">
                                 <div>
                                     <span className="text-2xl font-bold text-slate-700">{totalAssets}</span>
                                     <span className="text-xs text-muted-foreground ml-2">Total</span>
                                 </div>
                             </div>
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-xs">
+                            <div className="space-y-1">
+                                <div className="flex justify-between text-[10px]">
                                     <span className="text-slate-600">Concluídos</span>
                                     <span className="font-medium">{assetsCompleted}</span>
                                 </div>
-                                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
                                     <div className="bg-green-500 h-full" style={{ width: `${totalAssets > 0 ? (assetsCompleted/totalAssets)*100 : 0}%` }} />
                                 </div>
-                                <div className="flex justify-between text-xs">
+                                <div className="flex justify-between text-[10px]">
                                     <span className="text-slate-600">Em Andamento</span>
                                     <span className="font-medium">{assetsInProgress}</span>
                                 </div>
-                                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
                                     <div className="bg-yellow-500 h-full" style={{ width: `${totalAssets > 0 ? (assetsInProgress/totalAssets)*100 : 0}%` }} />
                                 </div>
                             </div>
