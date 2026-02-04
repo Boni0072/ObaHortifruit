@@ -167,10 +167,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const visibleNavItems = navItems.filter(item => {
     const role = (user as any)?.role;
-    if (role === 'diretoria' || role === 'admin') return true;
-    // Se allowedPages não estiver definido (undefined/null), permite acesso (comportamento padrão ou legado)
-    if (!allowedPages) return true;
-    return allowedPages.includes(item.id);
+    // Apenas Admin vê tudo. Diretoria deve respeitar as permissões configuradas (allowedPages).
+    if (role === 'admin') return true;
+
+    // Se allowedPages não existe, o usuário não tem permissões explícitas.
+    if (!allowedPages || !Array.isArray(allowedPages)) return false;
+
+    // Permite acesso apenas se a página estiver na lista de permissões.
+    return allowedPages.includes(item.id) || item.id === 'dashboard';
   });
 
   const steps = [
