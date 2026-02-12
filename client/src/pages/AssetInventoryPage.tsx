@@ -145,6 +145,7 @@ export default function AssetInventoryPage() {
   const [selectedCostCenter, setSelectedCostCenter] = useState("all");
   const [scanInput, setScanInput] = useState("");
   const [isScanning, setIsScanning] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const filteredAssets = assets?.filter(asset => {
     const matchesSearch = (asset.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -285,9 +286,55 @@ export default function AssetInventoryPage() {
   };
 
   const startScanning = () => {
-    toast.info("Funcionalidade de scanner desativada temporariamente (biblioteca ausente).");
-    // setIsScanning(true); // Re-enable when library is installed
+    setIsScanning(true);
   };
+
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let interval: NodeJS.Timeout;
+
+    if (isScanning) {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(s => {
+          stream = s;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.play().catch(console.error);
+          }
+
+          // Tenta usar API nativa de detecção se disponível
+          if ('BarcodeDetector' in window) {
+             try {
+                 const detector = new (window as any).BarcodeDetector({ formats: ['qr_code', 'code_128', 'ean_13', 'data_matrix'] });
+                 interval = setInterval(async () => {
+                    if (videoRef.current && videoRef.current.readyState === 4) {
+                        try {
+                            const barcodes = await detector.detect(videoRef.current);
+                            if (barcodes.length > 0) {
+                                setScanInput(barcodes[0].rawValue);
+                                setIsScanning(false);
+                                toast.success("Código lido!");
+                            }
+                        } catch (e) {}
+                    }
+                 }, 500);
+             } catch (e) { console.warn("BarcodeDetector error", e); }
+          }
+        })
+        .catch(err => {
+          console.error("Erro câmera", err);
+          toast.error("Erro ao acessar câmera. Verifique as permissões.");
+          setIsScanning(false);
+        });
+    }
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+      if (interval) clearInterval(interval);
+    };
+  }, [isScanning]);
 
   const handleCompleteInventory = async (scheduleId: string) => {
     // Transforma os dados de execução em resultados para salvar
@@ -1074,11 +1121,30 @@ export default function AssetInventoryPage() {
       {/* Scanner Overlay */}
       {isScanning && (
         <div className="fixed inset-0 z-[100] bg-black flex flex-col">
-            <div className="relative flex-1">
-                <div id="reader" className="w-full h-full"></div>
+            <div className="relative flex-1 bg-black flex items-center justify-center">
+                <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+                <div className="absolute inset-0 border-2 border-white/50 m-12 rounded-lg pointer-events-none"></div>
                 <div className="absolute top-4 right-4 z-[101]">
                     <Button variant="ghost" size="icon" className="text-white bg-black/50 hover:bg-black/70 rounded-full" onClick={() => setIsScanning(false)}>
                         <X className="h-8 w-8" />
+                    </Button>
+                </div>
+                {/* Botão de Simulação para Testes (caso a leitura nativa falhe) */}
+                <div className="absolute bottom-20 left-0 right-0 flex justify-center">
+                    <Button variant="secondary" size="sm" className="opacity-80 hover:opacity-100" onClick={() => {
+                        const pending = performingSchedule?.assetIds.find(id => !executionData[id]?.verified);
+                        if (pending) {
+                            const asset = assets.find(a => a.id === pending);
+                            if (asset) {
+                                setScanInput(asset.tagNumber || asset.assetNumber || "");
+                                setIsScanning(false);
+                                toast.success("Leitura simulada (Teste)");
+                            }
+                        } else {
+                            toast.info("Nenhum ativo pendente para simular.");
+                        }
+                    }}>
+                        Simular Leitura (Teste)
                     </Button>
                 </div>
             </div>
