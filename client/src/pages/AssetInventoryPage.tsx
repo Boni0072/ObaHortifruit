@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, updateDoc, doc, onSnapshot, writeBatch } from "firebase/firestore";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Search, Download, QrCode, ClipboardList, Calendar as CalendarIcon, Users, CheckCircle2, AlertCircle, PlayCircle, Check, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Search, Download, QrCode, ClipboardList, Calendar as CalendarIcon, Users, CheckCircle2, AlertCircle, PlayCircle, Check, XCircle, ChevronDown, ChevronUp, Camera, X } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -144,6 +144,7 @@ export default function AssetInventoryPage() {
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
   const [selectedCostCenter, setSelectedCostCenter] = useState("all");
   const [scanInput, setScanInput] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
 
   const filteredAssets = assets?.filter(asset => {
     const matchesSearch = (asset.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -281,6 +282,11 @@ export default function AssetInventoryPage() {
     } else {
       toast.error(`Ativo não encontrado na lista deste inventário: ${scanInput}`);
     }
+  };
+
+  const startScanning = () => {
+    toast.info("Funcionalidade de scanner desativada temporariamente (biblioteca ausente).");
+    // setIsScanning(true); // Re-enable when library is installed
   };
 
   const handleCompleteInventory = async (scheduleId: string) => {
@@ -932,13 +938,21 @@ export default function AssetInventoryPage() {
                     <Label htmlFor="scan-input">Leitura de Plaqueta / QR Code</Label>
                     <form onSubmit={handleScan} className="flex gap-2 mt-1">
                         <div className="relative flex-1">
-                            <QrCode className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Button 
+                                type="button" 
+                                variant="ghost" 
+                                size="icon" 
+                                className="absolute left-0 top-0 h-10 w-10 text-muted-foreground hover:text-foreground z-10"
+                                onClick={startScanning}
+                            >
+                                <QrCode className="h-5 w-5" />
+                            </Button>
                             <Input 
                                 id="scan-input"
                                 value={scanInput}
                                 onChange={(e) => setScanInput(e.target.value)}
                                 placeholder="Bipe ou digite o código..."
-                                className="pl-9 bg-white"
+                                className="pl-10 bg-white"
                                 autoFocus
                                 autoComplete="off"
                             />
@@ -1056,6 +1070,23 @@ export default function AssetInventoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Scanner Overlay */}
+      {isScanning && (
+        <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+            <div className="relative flex-1">
+                <div id="reader" className="w-full h-full"></div>
+                <div className="absolute top-4 right-4 z-[101]">
+                    <Button variant="ghost" size="icon" className="text-white bg-black/50 hover:bg-black/70 rounded-full" onClick={() => setIsScanning(false)}>
+                        <X className="h-8 w-8" />
+                    </Button>
+                </div>
+            </div>
+            <div className="p-6 bg-black text-white text-center font-medium">
+                Aponte a câmera para o código
+            </div>
+        </div>
+      )}
 
       {/* Diálogo para Validar/Aprovar Inventário */}
       <Dialog open={!!reviewingSchedule} onOpenChange={(open) => !open && setReviewingSchedule(null)}>
