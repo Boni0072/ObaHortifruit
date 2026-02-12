@@ -4,7 +4,7 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, TrendingUp, DollarSign, Package, Activity, BarChart3, ArrowUpRight, AlertTriangle, TrendingDown, Target, Wallet } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, Package, Activity, BarChart3, ArrowUpRight, AlertTriangle, TrendingDown, Target, Wallet, X } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useLocation } from "wouter";
 
@@ -38,6 +38,8 @@ const parseDate = (value: any): Date => {
 export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'budget' | 'assets'>('budget');
   const [depreciationType, setDepreciationType] = useState<'fiscal' | 'corporate'>('fiscal');
+  const [showBurnRateDetails, setShowBurnRateDetails] = useState(false);
+  const [showAssetsModal, setShowAssetsModal] = useState(false);
 
   const [projects, setProjects] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -615,16 +617,55 @@ export default function Dashboard() {
                         </p>
                     </CardContent>
                 </Card>
-                <Card className="border-l-4 border-l-orange-500 shadow-sm py-3 gap-1">
+                <Card 
+                    className="border-l-4 border-l-orange-500 shadow-sm py-3 gap-1 cursor-pointer hover:bg-slate-50 transition-colors"
+                    onClick={() => setShowBurnRateDetails(!showBurnRateDetails)}
+                >
                     <CardHeader className="pb-0">
                         <CardTitle className="text-base font-medium text-slate-500 flex justify-between">
-                            Run Rate (Projeção)
+                            Taxa de Queimação (Projeção)
                             <TrendingUp className="h-4 w-4 text-orange-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-slate-800">{formatCurrency(budgetMetrics.runRate)}</div>
-                        <p className="text-sm text-muted-foreground mt-1">Baseado no Burn Rate mensal de {formatCurrency(budgetMetrics.burnRate)}</p>
+                        <p className="text-sm text-muted-foreground mt-1">Baseado no Taxa de Queimação mensal de {formatCurrency(budgetMetrics.burnRate)}</p>
+                        {showBurnRateDetails && (
+                            <div className="mt-4 pt-3 border-t border-orange-100 animate-in fade-in slide-in-from-top-2">
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-xs font-semibold text-slate-700">Fórmula (Run Rate):</p>
+                                        <code className="text-[10px] bg-slate-100 p-1 rounded block mt-1 text-slate-600">
+                                            (Gasto YTD / Meses Decorridos) × 12
+                                        </code>
+                                    </div>
+                                    
+                                    {budgetMetrics.runRate > budgetMetrics.totalBudget ? (
+                                        <div className="p-2 bg-red-50 text-red-700 rounded text-xs border border-red-100 flex gap-2 items-start">
+                                            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                            <div>
+                                                <p className="font-semibold">Alerta de Desvio</p>
+                                                <p>Projeção excede o orçamento de {formatCurrency(budgetMetrics.totalBudget)}.</p>
+                                                <p className="mt-1 font-medium border-t border-red-200 pt-1">
+                                                    Ideal: Manter média mensal abaixo de {formatCurrency(budgetMetrics.totalBudget / 12)}.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="p-2 bg-emerald-50 text-emerald-700 rounded text-xs border border-emerald-100 flex gap-2 items-start">
+                                            <Target className="w-4 h-4 shrink-0 mt-0.5" />
+                                            <div>
+                                                <p className="font-semibold">Dentro da Meta</p>
+                                                <p>Projeção compatível com o orçamento total.</p>
+                                                <p className="mt-1 font-medium border-t border-emerald-200 pt-1">
+                                                    Teto Mensal: {formatCurrency(budgetMetrics.totalBudget / 12)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>
@@ -809,7 +850,10 @@ export default function Dashboard() {
                         </CardContent>
                     </Card>
 
-                    <Card className="py-3 gap-1 shadow-sm">
+                    <Card 
+                        className="py-3 gap-1 shadow-sm cursor-pointer hover:bg-slate-50 transition-colors"
+                        onClick={() => setShowAssetsModal(true)}
+                    >
                         <CardHeader className="pb-0">
                             <CardTitle className="text-base font-medium text-slate-500">Status dos Ativos</CardTitle>
                         </CardHeader>
@@ -1041,6 +1085,71 @@ export default function Dashboard() {
                 </div>
             </CardContent>
         </Card>
+
+        {/* Modal de Detalhes dos Ativos em Andamento */}
+        {showAssetsModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div className="p-4 border-b flex items-center justify-between bg-slate-50">
+                        <h3 className="text-lg font-semibold text-slate-700 flex items-center gap-2">
+                            <Activity className="w-5 h-5 text-yellow-600" />
+                            Ativos em Andamento
+                        </h3>
+                        <Button variant="ghost" size="sm" onClick={() => setShowAssetsModal(false)} className="h-8 w-8 p-0 rounded-full">
+                            <X className="w-5 h-5 text-slate-500" />
+                        </Button>
+                    </div>
+                    <div className="flex-1 overflow-auto p-0">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Nome do Ativo</TableHead>
+                                    <TableHead>Obra</TableHead>
+                                    <TableHead>Classe</TableHead>
+                                    <TableHead>Início</TableHead>
+                                    <TableHead className="text-right">Valor Atual (Custo)</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {assets.filter(a => a.status !== 'concluido').map((asset) => {
+                                    const assetExpenses = expenses.filter(e => String(e.assetId) === String(asset.id));
+                                    const currentCost = assetExpenses.reduce((sum, curr) => sum + Number(curr.amount), Number(asset.value || 0));
+                                    
+                                    let projectName = '-';
+                                    if (asset.projectId) {
+                                        const p = projects.find(p => String(p.id) === String(asset.projectId));
+                                        if (p) projectName = p.name;
+                                    } else if (assetExpenses.length > 0) {
+                                        const p = projects.find(p => String(p.id) === String(assetExpenses[0].projectId));
+                                        if (p) projectName = p.name;
+                                    }
+
+                                    return (
+                                        <TableRow key={asset.id}>
+                                            <TableCell className="font-medium">{asset.name}</TableCell>
+                                            <TableCell className="text-slate-600">{projectName}</TableCell>
+                                            <TableCell>{asset.assetClass || '-'}</TableCell>
+                                            <TableCell>{asset.startDate ? new Date(asset.startDate).toLocaleDateString('pt-BR') : '-'}</TableCell>
+                                            <TableCell className="text-right font-semibold text-slate-700">{formatCurrency(currentCost)}</TableCell>
+                                        </TableRow>
+                                    );
+                                })}
+                                {assets.filter(a => a.status !== 'concluido').length === 0 && (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                                            Nenhum ativo em andamento no momento.
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                    <div className="p-4 border-t bg-slate-50 flex justify-end">
+                        <Button onClick={() => setShowAssetsModal(false)}>Fechar</Button>
+                    </div>
+                </div>
+            </div>
+        )}
       </div>
       )}
     </div>

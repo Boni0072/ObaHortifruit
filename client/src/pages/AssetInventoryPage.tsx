@@ -86,6 +86,22 @@ export default function AssetInventoryPage() {
   const [performingSchedule, setPerformingSchedule] = useState<InventorySchedule | null>(null);
   const [reviewingSchedule, setReviewingSchedule] = useState<InventorySchedule | null>(null);
   const [executionData, setExecutionData] = useState<Record<string, { verified: boolean; costCenter: string; observations: string }>>({});
+  const [selectedForApproval, setSelectedForApproval] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (reviewingSchedule?.results) {
+      setSelectedForApproval(reviewingSchedule.results.map(r => r.assetId));
+    } else {
+      setSelectedForApproval([]);
+    }
+  }, [reviewingSchedule]);
+
+  const toggleApproval = (assetId: string) => {
+    setSelectedForApproval(prev => 
+      prev.includes(assetId) ? prev.filter(id => id !== assetId) : [...prev, assetId]
+    );
+  };
+
   const [schedules, setSchedules] = useState<InventorySchedule[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
@@ -196,7 +212,7 @@ export default function AssetInventoryPage() {
       // Atualiza os ativos com as novas informações (se houver mudança de centro de custo)
       if (schedule.results) {
         schedule.results.forEach(result => {
-          if (result.newCostCenter) {
+          if (result.newCostCenter && selectedForApproval.includes(result.assetId)) {
             const assetRef = doc(db, "assets", result.assetId);
             batch.update(assetRef, { 
               costCenter: result.newCostCenter,
@@ -1171,6 +1187,15 @@ export default function AssetInventoryPage() {
              <Table>
                <TableHeader>
                  <TableRow>
+                   <TableHead className="w-[50px] text-center">
+                      <Checkbox 
+                        checked={reviewingSchedule?.results?.length === selectedForApproval.length && (reviewingSchedule?.results?.length || 0) > 0}
+                        onCheckedChange={() => {
+                          if (selectedForApproval.length === (reviewingSchedule?.results?.length || 0)) setSelectedForApproval([]);
+                          else setSelectedForApproval(reviewingSchedule?.results?.map(r => r.assetId) || []);
+                        }}
+                      />
+                   </TableHead>
                    <TableHead>Ativo</TableHead>
                    <TableHead className="text-center">Verificado</TableHead>
                    <TableHead>Centro de Custo (Atual)</TableHead>
@@ -1189,7 +1214,13 @@ export default function AssetInventoryPage() {
                    const isChange = result.newCostCenter && result.newCostCenter !== currentCC;
 
                    return (
-                     <TableRow key={index} className={isChange ? "bg-yellow-50" : ""}>
+                     <TableRow key={index} className={`${isChange ? "bg-yellow-50" : ""} ${!selectedForApproval.includes(result.assetId) ? "opacity-60" : ""}`}>
+                       <TableCell className="text-center">
+                          <Checkbox 
+                            checked={selectedForApproval.includes(result.assetId)}
+                            onCheckedChange={() => toggleApproval(result.assetId)}
+                          />
+                       </TableCell>
                        <TableCell>
                           <div className="font-medium">{asset?.name || "Ativo não encontrado"}</div>
                           <div className="text-xs text-muted-foreground">{asset?.assetNumber}</div>
