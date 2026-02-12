@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Search, Download, QrCode, ClipboardList, Calendar as CalendarIcon, Users, CheckCircle2, AlertCircle, PlayCircle, Check, XCircle } from "lucide-react";
+import { Loader2, Search, Download, QrCode, ClipboardList, Calendar as CalendarIcon, Users, CheckCircle2, AlertCircle, PlayCircle, Check, XCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { useLocation } from "wouter";
 
 interface InventoryResult {
   assetId: string;
@@ -62,6 +63,7 @@ const getBase64ImageFromURL = (url: string): Promise<string> => {
 export default function AssetInventoryPage() {
   const { user: authUser } = useAuth();
   const [user, setUser] = useState<any>(authUser);
+  const [, setLocation] = useLocation();
 
   useEffect(() => {
     if (authUser) {
@@ -139,13 +141,33 @@ export default function AssetInventoryPage() {
   const [scheduleDate, setScheduleDate] = useState(new Date().toISOString().split("T")[0]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+  const [selectedCostCenter, setSelectedCostCenter] = useState("all");
+  const [scanInput, setScanInput] = useState("");
 
-  const filteredAssets = assets?.filter(asset =>
-    (asset.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filteredAssets = assets?.filter(asset => {
+    const matchesSearch = (asset.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     (asset.tagNumber || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (asset.assetNumber || "").toLowerCase().includes(searchTerm.toLowerCase())
-  );
+    (asset.assetNumber || "").toLowerCase().includes(searchTerm.toLowerCase());
+    const assetCC = typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter;
+    const matchesCostCenter = selectedCostCenter === "all" || assetCC === selectedCostCenter;
+    return matchesSearch && matchesCostCenter;
+  });
 
+  // Efeito para abrir o modal diretamente via URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const scheduleId = params.get('schedule');
+
+    if (scheduleId && schedules.length > 0) {
+      const scheduleToOpen = schedules.find(s => s.id === scheduleId);
+      if (scheduleToOpen && scheduleToOpen.status === 'pending') {
+        setPerformingSchedule(scheduleToOpen);
+        // Limpa o parâmetro da URL sem recarregar o componente (evita reset do state)
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    }
+  });
   // Garante a leitura do ID independente do formato do objeto user (id, uid, openId, sub)
   const currentUserId = (user as any)?.id || (user as any)?.openId || (user as any)?.uid || (user as any)?.sub;
   const userRole = (user as any)?.role;
@@ -217,14 +239,49 @@ export default function AssetInventoryPage() {
         const asset = assets.find(a => a.id === id);
         const currentCC = typeof asset?.costCenter === 'object' ? (asset.costCenter as any).code : asset?.costCenter;
         initialData[id] = {
-          verified: true,
+          verified: false, // Inicia como não verificado para forçar a contagem
           costCenter: currentCC || "",
           observations: ""
         };
       });
       setExecutionData(initialData);
+      setScanInput("");
     }
   }, [performingSchedule, assets]);
+
+  const handleScan = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!performingSchedule || !scanInput) return;
+
+    const term = scanInput.trim().toLowerCase();
+    
+    // Procura o ativo na lista do agendamento
+    const assetId = performingSchedule.assetIds.find(id => {
+      const asset = assets.find(a => a.id === id);
+      return asset && (
+        (asset.tagNumber && asset.tagNumber.toLowerCase() === term) ||
+        (asset.assetNumber && asset.assetNumber.toLowerCase() === term)
+      );
+    });
+
+    if (assetId) {
+      if (executionData[assetId]?.verified) {
+         toast.info(`Ativo já conferido: ${scanInput}`);
+      } else {
+         setExecutionData(prev => ({
+            ...prev,
+            [assetId]: { ...prev[assetId], verified: true }
+         }));
+         toast.success(`Ativo conferido: ${scanInput}`);
+         // Feedback sonoro simples
+         const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
+         audio.play().catch(() => {});
+      }
+      setScanInput("");
+    } else {
+      toast.error(`Ativo não encontrado na lista deste inventário: ${scanInput}`);
+    }
+  };
 
   const handleCompleteInventory = async (scheduleId: string) => {
     // Transforma os dados de execução em resultados para salvar
@@ -240,6 +297,29 @@ export default function AssetInventoryPage() {
 
     setPerformingSchedule(null);
     toast.success("Contagem enviada para aprovação do solicitante!");
+
+    // Redirecionar para a primeira página permitida (exceto inventário)
+    const navItems = [
+        { id: 'dashboard', path: '/dashboard' },
+        { id: 'projects', path: '/projects' },
+        { id: 'budgets', path: '/budgets' },
+        { id: 'assets', path: '/assets' },
+        { id: 'asset-movements', path: '/asset-movements' },
+        { id: 'asset-depreciation', path: '/asset-depreciation' },
+        { id: 'reports', path: '/reports' },
+        { id: 'accounting', path: '/accounting' },
+        { id: 'users', path: '/users' },
+    ];
+
+    const role = (user as any)?.role;
+    const allowedPages = (user as any)?.allowedPages || [];
+
+    const firstAllowed = navItems.find(item => {
+        if (role === 'admin') return true;
+        return allowedPages.includes(item.id) || item.id === 'dashboard';
+    });
+
+    setLocation(firstAllowed ? firstAllowed.path : '/dashboard');
   };
 
   const getActiveSchedule = (assetId: string) => {
@@ -463,7 +543,7 @@ export default function AssetInventoryPage() {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-slate-700 flex items-center gap-2">
           <ClipboardList className="h-8 w-8" />
-          Agendamento de Inventário
+          Inventário de Ativos
         </h1>
         <div className="flex gap-2">
           <Button onClick={handleExport} variant="outline">
@@ -635,6 +715,21 @@ export default function AssetInventoryPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+            <div className="w-[280px]">
+              <Select value={selectedCostCenter} onValueChange={setSelectedCostCenter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filtrar por Centro de Custo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os Centros de Custo</SelectItem>
+                  {costCenters.map((cc: any) => (
+                    <SelectItem key={cc.id} value={cc.code}>
+                      {cc.code} - {cc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -655,6 +750,7 @@ export default function AssetInventoryPage() {
                   <TableHead>Nº Ativo</TableHead>
                   <TableHead>Plaqueta</TableHead>
                   <TableHead>Nome</TableHead>
+                  <TableHead>Centro de Custo</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Responsável</TableHead>
                   <TableHead className="text-right">Valor</TableHead>
@@ -690,6 +786,13 @@ export default function AssetInventoryPage() {
                     <TableCell>
                       <div className="font-medium">{asset.name}</div>
                       <div className="text-xs text-muted-foreground truncate max-w-[300px]">{asset.description}</div>
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                         const ccCode = typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter;
+                         const cc = costCenters.find(c => c.code === ccCode);
+                         return cc ? `${cc.code} - ${cc.name}` : (ccCode || "-");
+                      })()}
                     </TableCell>
                     <TableCell>
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
@@ -738,7 +841,7 @@ export default function AssetInventoryPage() {
                 )})}
                 {(!filteredAssets || filteredAssets.length === 0) && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       Nenhum ativo encontrado.
                     </TableCell>
                   </TableRow>
@@ -751,12 +854,18 @@ export default function AssetInventoryPage() {
 
       {/* Histórico de Inventários Concluídos */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ClipboardList className="h-5 w-5" />
-            Histórico de Inventários Concluídos
-          </CardTitle>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5" />
+              Histórico de Inventários Concluídos
+            </CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}>
+              {isHistoryExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </Button>
+          </div>
         </CardHeader>
+        {isHistoryExpanded && (
         <CardContent>
           <Table>
             <TableHeader>
@@ -800,54 +909,104 @@ export default function AssetInventoryPage() {
             </TableBody>
           </Table>
         </CardContent>
+        )}
       </Card>
 
       {/* Diálogo para Realizar Inventário */}
       <Dialog open={!!performingSchedule} onOpenChange={(open) => !open && setPerformingSchedule(null)}>
-        <DialogContent className="max-w-[95vw] max-h-[95vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="w-full h-full max-w-full max-h-full md:max-w-[95vw] md:max-h-[95vh] p-0 md:p-6 flex flex-col gap-0">
+          <DialogHeader className="p-4 pb-2 md:p-0 bg-white border-b md:border-none">
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="h-5 w-5" />
               Conferência de Inventário
             </DialogTitle>
-            <DialogDescription>
-              Verifique a presença física e o estado de conservação dos ativos listados abaixo.
+            <DialogDescription className="hidden md:block">
+              Utilize o leitor de QR Code ou digite a plaqueta para confirmar os ativos.
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex-1 overflow-y-auto py-4">
+          <div className="flex-1 overflow-hidden flex flex-col bg-slate-50/50">
+             {/* Área de Scan e Resumo */}
+             <div className="bg-white p-4 border-b md:border md:rounded-lg flex flex-col gap-4 shrink-0 shadow-sm md:shadow-none md:m-0">
+                <div className="w-full">
+                    <Label htmlFor="scan-input">Leitura de Plaqueta / QR Code</Label>
+                    <form onSubmit={handleScan} className="flex gap-2 mt-1">
+                        <div className="relative flex-1">
+                            <QrCode className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input 
+                                id="scan-input"
+                                value={scanInput}
+                                onChange={(e) => setScanInput(e.target.value)}
+                                placeholder="Bipe ou digite o código..."
+                                className="pl-9 bg-white"
+                                autoFocus
+                                autoComplete="off"
+                            />
+                        </div>
+                        <Button type="submit" size="icon" className="w-12 shrink-0">
+                            <CheckCircle2 className="h-5 w-5" />
+                        </Button>
+                    </form>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-sm w-full">
+                    <div className="flex flex-col items-center bg-slate-50 p-2 rounded border">
+                        <span className="text-muted-foreground text-xs uppercase font-bold">Total</span>
+                        <span className="font-bold text-lg">{performingSchedule?.assetIds.length || 0}</span>
+                    </div>
+                    <div className="flex flex-col items-center bg-green-50 p-2 rounded border border-green-100 text-green-700">
+                        <span className="flex items-center gap-1 text-xs uppercase font-bold"><CheckCircle2 className="w-3 h-3" /> Feito</span>
+                        <span className="font-bold text-lg">{Object.values(executionData).filter(d => d.verified).length}</span>
+                    </div>
+                    <div className="flex flex-col items-center bg-orange-50 p-2 rounded border border-orange-100 text-orange-700">
+                        <span className="flex items-center gap-1 text-xs uppercase font-bold"><AlertCircle className="w-3 h-3" /> Falta</span>
+                        <span className="font-bold text-lg">{Object.values(executionData).filter(d => !d.verified).length}</span>
+                    </div>
+                </div>
+             </div>
+
+             <div className="flex-1 overflow-auto bg-white md:border md:rounded-md md:mt-4">
              <Table>
                <TableHeader>
                  <TableRow>
-                   <TableHead className="w-[50px]">OK</TableHead>
-                   <TableHead>Nº Ativo</TableHead>
-                   <TableHead>Nome</TableHead>
-                   <TableHead>Centro de Custo (Atual)</TableHead>
-                   <TableHead>Novo Centro de Custo</TableHead>
-                   <TableHead>Observações</TableHead>
+                   <TableHead className="w-[60px] text-center bg-slate-50 sticky top-0 z-10">Status</TableHead>
+                   <TableHead className="bg-slate-50 sticky top-0 z-10">Ativo</TableHead>
+                   <TableHead className="bg-slate-50 sticky top-0 z-10">Localização</TableHead>
+                   <TableHead className="bg-slate-50 sticky top-0 z-10 min-w-[150px]">Obs</TableHead>
                  </TableRow>
                </TableHeader>
                <TableBody>
-                 {performingSchedule && assets?.filter(a => performingSchedule.assetIds.includes(a.id)).map(asset => (
-                   <TableRow key={asset.id}>
-                     <TableCell className="text-center">
-                       <Checkbox 
-                        checked={executionData[asset.id]?.verified ?? true} 
-                        onCheckedChange={(checked) => setExecutionData(prev => ({
-                          ...prev,
-                          [asset.id]: { ...prev[asset.id], verified: !!checked }
-                        }))}
-                       /> 
+                 {performingSchedule && assets?.filter(a => performingSchedule.assetIds.includes(a.id)).map(asset => {
+                   const isVerified = executionData[asset.id]?.verified;
+                   return (
+                   <TableRow key={asset.id} className={isVerified ? "bg-green-50/50" : ""}>
+                     <TableCell className="text-center p-2 align-middle">
+                       <div className="flex justify-center items-center">
+                          {isVerified ? (
+                              <CheckCircle2 className="w-8 h-8 text-green-600" />
+                          ) : (
+                              <Checkbox 
+                                checked={false} 
+                                onCheckedChange={(checked) => setExecutionData(prev => ({
+                                  ...prev,
+                                  [asset.id]: { ...prev[asset.id], verified: !!checked }
+                                }))}
+                                className="w-6 h-6 border-2"
+                              /> 
+                          )}
+                       </div>
                      </TableCell>
-                     <TableCell className="font-mono">{asset.assetNumber}</TableCell>
-                     <TableCell>
-                        <div className="font-medium">{asset.name}</div>
-                        <div className="text-xs text-muted-foreground">{asset.description}</div>
+                     <TableCell className="p-2 align-middle">
+                        <div className="flex flex-col">
+                            <span className="font-bold text-sm">{asset.tagNumber}</span>
+                            <span className="text-xs text-muted-foreground line-clamp-2 leading-tight">{asset.name}</span>
+                            <span className="text-[10px] font-mono text-slate-400 mt-0.5">{asset.assetNumber}</span>
+                        </div>
                      </TableCell>
-                     <TableCell>
-                        {typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter || "-"}
-                     </TableCell>
-                     <TableCell>
+                     <TableCell className="p-2 align-middle">
+                        <div className="flex flex-col gap-1">
+                            <span className="text-xs text-muted-foreground">
+                                {typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter || "-"}
+                            </span>
                         <Select 
                           value={executionData[asset.id]?.costCenter || ""} 
                           onValueChange={(val) => setExecutionData(prev => ({
@@ -855,41 +1014,45 @@ export default function AssetInventoryPage() {
                             [asset.id]: { ...prev[asset.id], costCenter: val }
                           }))}
                         >
-                          <SelectTrigger className="h-8 w-[200px]">
-                            <SelectValue placeholder="Manter atual" />
+                              <SelectTrigger className="h-8 text-xs w-full bg-white border-slate-200">
+                                <SelectValue placeholder="Mover..." />
                           </SelectTrigger>
                           <SelectContent>
                             {costCenters?.map((cc: any) => (
                               <SelectItem key={cc.id} value={cc.code}>
-                                {cc.code} - {cc.name}
+                                    {cc.code}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
+                        </div>
                      </TableCell>
-                     <TableCell>
+                     <TableCell className="p-2 align-middle">
                       <Textarea
                           value={executionData[asset.id]?.observations || ""}
                           onChange={(e) => setExecutionData(prev => ({
                             ...prev,
                             [asset.id]: { ...prev[asset.id], observations: e.target.value }
                           }))}
-                          placeholder="Observações..."
-                        className="text-xs min-h-[64px] min-w-[250px]"
+                          placeholder="Obs..."
+                        className="text-xs min-h-[60px] bg-white resize-none"
                         />
                      </TableCell>
                    </TableRow>
-                 ))}
+                 )})}
                </TableBody>
              </Table>
+             </div>
           </div>
       
-          <DialogFooter className="mt-auto pt-4 border-t">
-            <Button variant="outline" onClick={() => setPerformingSchedule(null)}>Cancelar</Button>
-            <Button className="bg-green-600 hover:bg-green-700" onClick={() => performingSchedule && handleCompleteInventory(performingSchedule.id)}>
+          <DialogFooter className="p-4 border-t bg-white md:bg-transparent mt-auto">
+            <div className="flex gap-3 w-full">
+                <Button variant="outline" className="flex-1 h-12 text-base" onClick={() => setPerformingSchedule(null)}>Voltar</Button>
+                <Button className="flex-1 bg-green-600 hover:bg-green-700 h-12 text-base" onClick={() => performingSchedule && handleCompleteInventory(performingSchedule.id)}>
               <CheckCircle2 className="mr-2 h-4 w-4" />
-              Enviar para Aprovação
+              Finalizar
             </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

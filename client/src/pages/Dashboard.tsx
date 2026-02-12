@@ -37,11 +37,13 @@ const parseDate = (value: any): Date => {
 
 export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'budget' | 'assets'>('budget');
+  const [depreciationType, setDepreciationType] = useState<'fiscal' | 'corporate'>('fiscal');
 
   const [projects, setProjects] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
   const [allBudgets, setAllBudgets] = useState<any[]>([]);
+  const [assetClasses, setAssetClasses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -57,6 +59,9 @@ export default function Dashboard() {
     const unsubBudgets = onSnapshot(collection(db, "budgets"), (snapshot) => {
       setAllBudgets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
+    const unsubAssetClasses = onSnapshot(collection(db, "asset_classes"), (snapshot) => {
+      setAssetClasses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
 
     // Pequeno delay para garantir que o loading não pisque muito rápido ou fique preso
     const timer = setTimeout(() => setIsLoading(false), 800);
@@ -66,9 +71,21 @@ export default function Dashboard() {
       unsubExpenses();
       unsubAssets();
       unsubBudgets();
+      unsubAssetClasses();
       clearTimeout(timer);
     };
   }, []);
+
+  const getLocalDateFromISO = (isoString: string) => {
+    if (!isoString) return new Date();
+    // Handle YYYY-MM-DD string manually to avoid timezone issues
+    if (isoString.length === 10 && isoString.includes('-')) {
+        const [y, m, d] = isoString.split('-').map(Number);
+        return new Date(y, m - 1, d);
+    }
+    const date = new Date(isoString);
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  };
 
   // Capex Metrics
   const totalCapex = expenses?.filter(e => e.type === 'capex').reduce((acc, curr) => acc + Number(curr.amount), 0) || 0;
@@ -92,7 +109,7 @@ export default function Dashboard() {
 
   // Asset Classes Metrics (Calculated)
   const assetClassesData = useMemo(() => {
-    if (!assets || !expenses) return [];
+    if (!assets || !expenses || !assetClasses) return [];
 
     const classMap: Record<string, { cost: number; depreciation: number; residual: number; count: number }> = {};
 
@@ -101,27 +118,34 @@ export default function Dashboard() {
       const assetExpenses = expenses.filter(e => String(e.assetId) === String(asset.id));
       const cost = assetExpenses.reduce((acc, curr) => acc + Number(curr.amount), Number(asset.value || 0));
 
-      // Calculate Depreciation (Simplified straight-line)
-      let depreciation = 0;
-      const usefulLifeYears = Number(asset.usefulLife || 0);
+      // Calculate Depreciation dynamically based on Last Run Date to match Depreciation Page
+      let depreciation = Number(asset.accumulatedDepreciation || 0);
       
-      // Use availabilityDate if present (CPC 27), else startDate
-      const startDateStr = asset.availabilityDate || asset.startDate;
-      
-      if (usefulLifeYears > 0 && startDateStr) {
-        const startDate = new Date(startDateStr);
-        const now = new Date();
-        
-        // Calculate months difference
-        let monthsElapsed = (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth());
-        if (monthsElapsed < 0) monthsElapsed = 0;
+      const assetClassDef = assetClasses.find(c => c.name === asset.assetClass);
+      const usefulLifeYears = depreciationType === 'corporate' 
+        ? (Number(asset.corporateUsefulLife) || Number(assetClassDef?.corporateUsefulLife) || 0)
+        : (Number(asset.usefulLife) || Number(assetClassDef?.usefulLife) || 0);
+      const lastDepreciationDateStr = asset.lastDepreciationDate;
+      const dateToUse = asset.availabilityDate || asset.startDate;
 
-        const totalMonths = usefulLifeYears * 12;
-        const residualValueEstimated = Number(asset.residualValue || 0);
-        const depreciableAmount = Math.max(0, cost - residualValueEstimated);
-        
-        const monthlyDepreciation = depreciableAmount / totalMonths;
-        depreciation = Math.min(depreciableAmount, monthlyDepreciation * monthsElapsed);
+      if (usefulLifeYears > 0 && dateToUse && asset.depreciationStatus !== 'paused' && lastDepreciationDateStr) {
+          const depStart = getLocalDateFromISO(dateToUse);
+          depStart.setMonth(depStart.getMonth() + 1, 1); // Standard rule: next month
+          
+          const lastRunDate = new Date(lastDepreciationDateStr);
+          const depStartMonth = depStart.getFullYear() * 12 + depStart.getMonth();
+          const lastRunMonth = lastRunDate.getFullYear() * 12 + lastRunDate.getMonth();
+          const assetEndMonth = depStartMonth + (usefulLifeYears * 12) - 1;
+          
+          const effectiveEndMonth = Math.min(lastRunMonth, assetEndMonth);
+          
+          if (effectiveEndMonth >= depStartMonth) {
+              const residualValue = Number(asset.residualValue || 0);
+              const depreciableAmount = Math.max(0, cost - residualValue);
+              const monthlyDepreciation = depreciableAmount / (usefulLifeYears * 12);
+              const monthsCount = effectiveEndMonth - depStartMonth + 1;
+              depreciation = monthsCount * monthlyDepreciation;
+          }
       }
 
       const residual = cost - depreciation;
@@ -140,11 +164,26 @@ export default function Dashboard() {
     return Object.entries(classMap)
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => b.cost - a.cost);
-  }, [assets, expenses]);
+  }, [assets, expenses, assetClasses, depreciationType]);
+
+  const assetClassesTotals = useMemo(() => {
+    if (!assetClassesData) return null;
+    return assetClassesData.reduce((acc, curr) => ({
+      count: acc.count + curr.count,
+      cost: acc.cost + curr.cost,
+      depreciation: acc.depreciation + curr.depreciation,
+      residual: acc.residual + curr.residual
+    }), {
+      count: 0,
+      cost: 0,
+      depreciation: 0,
+      residual: 0
+    });
+  }, [assetClassesData]);
 
   // Monthly Depreciation Chart Data (Current Year)
   const monthlyDepreciationData = useMemo(() => {
-    if (!assets || !expenses) return [];
+    if (!assets || !expenses || !assetClasses) return [];
 
     const currentYear = new Date().getFullYear();
     const months = Array.from({ length: 12 }, (_, i) => i);
@@ -158,15 +197,31 @@ export default function Dashboard() {
       assets.forEach((asset: any) => {
         const assetExpenses = expenses.filter(e => String(e.assetId) === String(asset.id));
         const cost = assetExpenses.reduce((acc, curr) => acc + Number(curr.amount), Number(asset.value || 0));
-        const usefulLifeYears = Number(asset.usefulLife || 0);
-        const startDateStr = asset.availabilityDate || asset.startDate;
+        
+        const assetClassDef = assetClasses.find(c => c.name === asset.assetClass);
+        const usefulLifeYears = depreciationType === 'corporate' 
+            ? (Number(asset.corporateUsefulLife) || Number(assetClassDef?.corporateUsefulLife) || 0)
+            : (Number(asset.usefulLife) || Number(assetClassDef?.usefulLife) || 0);
+        
+        const lastDepreciationDateStr = asset.lastDepreciationDate;
+        const dateToUse = asset.availabilityDate || asset.startDate;
 
-        if (usefulLifeYears > 0 && startDateStr) {
-          const assetStart = new Date(startDateStr);
+        if (usefulLifeYears > 0 && dateToUse && asset.depreciationStatus !== 'paused') {
+          const assetStart = getLocalDateFromISO(dateToUse);
+          assetStart.setMonth(assetStart.getMonth() + 1, 1);
+
           const assetEnd = new Date(assetStart);
           assetEnd.setMonth(assetStart.getMonth() + (usefulLifeYears * 12));
+          
+          // Check if this month is realized (calculated)
+          let isRealized = false;
+          if (lastDepreciationDateStr) {
+             const lastRunDate = new Date(lastDepreciationDateStr);
+             // If the run date is after or in the current month (checking year/month)
+             if (lastRunDate >= new Date(currentYear, monthIndex, 1)) isRealized = true;
+          }
 
-          if (assetStart <= monthEnd && assetEnd >= monthStart) {
+          if (isRealized && assetStart <= monthEnd && assetEnd > monthStart) {
              const residual = Number(asset.residualValue || 0);
              const depreciable = Math.max(0, cost - residual);
              const monthly = depreciable / (usefulLifeYears * 12);
@@ -181,7 +236,7 @@ export default function Dashboard() {
         value: total 
       };
     });
-  }, [assets, expenses]);
+  }, [assets, expenses, assetClasses, depreciationType]);
 
   // Budget Control Metrics (FP&A)
   const budgetMetrics = useMemo(() => {
@@ -316,7 +371,7 @@ export default function Dashboard() {
 
   // Asset Movement Data (Current Year)
   const assetMovementData = useMemo(() => {
-    if (!assets || !expenses) return [];
+    if (!assets || !expenses || !assetClasses) return [];
 
     const currentYear = new Date().getFullYear();
     const startOfYear = new Date(currentYear, 0, 1);
@@ -351,32 +406,87 @@ export default function Dashboard() {
       }
 
       // Depreciation Calculation
-      const usefulLifeYears = Number(asset.usefulLife || 0);
-      const depreciationStartStr = asset.availabilityDate || asset.startDate;
+      const assetClassDef = assetClasses.find(c => c.name === asset.assetClass);
+      const usefulLifeYears = depreciationType === 'corporate' 
+        ? (Number(asset.corporateUsefulLife) || Number(assetClassDef?.corporateUsefulLife) || 0)
+        : (Number(asset.usefulLife) || Number(assetClassDef?.usefulLife) || 0);
       
-      if (usefulLifeYears > 0 && depreciationStartStr) {
-        const depStart = new Date(depreciationStartStr);
+      let calculatedAccumulated = Number(asset.accumulatedDepreciation || 0);
+      const depreciationStartStr = asset.availabilityDate || asset.startDate;
+      const lastDepreciationDateStr = asset.lastDepreciationDate;
+      
+      if (depreciationStartStr) {
+        const depStart = getLocalDateFromISO(depreciationStartStr);
+        depStart.setMonth(depStart.getMonth() + 1, 1);
+
         const residualValue = Number(asset.residualValue || 0);
         const depreciableAmount = Math.max(0, totalCost - residualValue);
-        const monthlyDepreciation = depreciableAmount / (usefulLifeYears * 12);
-
-        // Initial Accumulated Depreciation (up to Dec 31 of previous year)
-        let monthsPrior = (startOfYear.getFullYear() - depStart.getFullYear()) * 12 + (startOfYear.getMonth() - depStart.getMonth());
-        if (monthsPrior < 0) monthsPrior = 0;
-        monthsPrior = Math.min(monthsPrior, usefulLifeYears * 12);
         
-        movementMap[className].initialDepreciation += monthsPrior * monthlyDepreciation;
-
-        // Period Depreciation (YTD)
-        const periodStart = depStart > startOfYear ? depStart : startOfYear;
-        // Calculate months from periodStart to now
-        let monthsInPeriod = (now.getFullYear() - periodStart.getFullYear()) * 12 + (now.getMonth() - periodStart.getMonth());
-        if (monthsInPeriod < 0) monthsInPeriod = 0;
+        let initialDep = 0;
+        let periodDep = 0;
         
-        const remainingLife = Math.max(0, (usefulLifeYears * 12) - monthsPrior);
-        monthsInPeriod = Math.min(monthsInPeriod, remainingLife);
+        if (usefulLifeYears > 0) {
+            const monthlyDepreciation = depreciableAmount / (usefulLifeYears * 12);
 
-        movementMap[className].periodDepreciation += monthsInPeriod * monthlyDepreciation;
+            // Calculate Period Depreciation based on Last Run Date (Realized)
+            if (lastDepreciationDateStr) {
+                const lastRunDate = new Date(lastDepreciationDateStr);
+                
+                const depStartMonthIndex = depStart.getFullYear() * 12 + depStart.getMonth();
+                const lastRunMonthIndex = lastRunDate.getFullYear() * 12 + lastRunDate.getMonth();
+                const assetEndMonthIndex = depStartMonthIndex + (usefulLifeYears * 12) - 1;
+                
+                const effectiveEndIndex = Math.min(lastRunMonthIndex, assetEndMonthIndex);
+                
+                if (effectiveEndIndex >= depStartMonthIndex) {
+                    // Recalculate Total Accumulated based on dates to ensure consistency
+                    const totalMonthsCount = effectiveEndIndex - depStartMonthIndex + 1;
+                    calculatedAccumulated = totalMonthsCount * monthlyDepreciation;
+
+                    // Now split this calculated total into Period and Initial
+                    
+                    const now = new Date();
+                    const currentSystemMonthIndex = now.getFullYear() * 12 + now.getMonth();
+                    
+                    // Logic: Use System Period, or Previous (Last Run) if System not run
+                    let targetMonthIndex = currentSystemMonthIndex;
+                    if (lastRunMonthIndex < currentSystemMonthIndex) {
+                        targetMonthIndex = lastRunMonthIndex;
+                    }
+
+                    if (totalMonthsCount > 0) {
+                        // If the asset was depreciated in the target month
+                        if (targetMonthIndex >= depStartMonthIndex && targetMonthIndex <= effectiveEndIndex) {
+                            // Period is the single month amount (calculated theoretically to ensure consistency)
+                            periodDep = monthlyDepreciation;
+                            
+                            // Safety check: cannot exceed what is in DB
+                            if (periodDep > calculatedAccumulated) periodDep = calculatedAccumulated;
+
+                            // Initial is the rest
+                            initialDep = calculatedAccumulated - periodDep;
+                        } else {
+                            // If asset finished depreciating before target month, or hasn't started in target month
+                            // Everything is Initial (Prior)
+                            initialDep = calculatedAccumulated;
+                            periodDep = 0;
+                        }
+                    }
+                }
+            } else if (calculatedAccumulated > 0) {
+                 // Fallback if no last run date but has accumulated value (e.g. imported legacy data)
+                 if (depStart < startOfYear) initialDep = calculatedAccumulated;
+                 else periodDep = calculatedAccumulated;
+            }
+
+        } else {
+             // Fallback if no useful life: allocate based on start date
+             if (depStart < startOfYear) initialDep = calculatedAccumulated;
+             else periodDep = calculatedAccumulated;
+        }
+
+        movementMap[className].initialDepreciation += initialDep;
+        movementMap[className].periodDepreciation += periodDep;
       }
     });
 
@@ -387,7 +497,28 @@ export default function Dashboard() {
       finalDepreciation: data.initialDepreciation + data.periodDepreciation,
       netValue: (data.initialCost + data.additions) - (data.initialDepreciation + data.periodDepreciation)
     })).sort((a, b) => b.finalCost - a.finalCost);
-  }, [assets, expenses]);
+  }, [assets, expenses, assetClasses, depreciationType]);
+
+  const assetMovementTotals = useMemo(() => {
+    if (!assetMovementData) return null;
+    return assetMovementData.reduce((acc, curr) => ({
+      initialCost: acc.initialCost + curr.initialCost,
+      additions: acc.additions + curr.additions,
+      finalCost: acc.finalCost + curr.finalCost,
+      initialDepreciation: acc.initialDepreciation + curr.initialDepreciation,
+      periodDepreciation: acc.periodDepreciation + curr.periodDepreciation,
+      finalDepreciation: acc.finalDepreciation + curr.finalDepreciation,
+      netValue: acc.netValue + curr.netValue
+    }), {
+      initialCost: 0,
+      additions: 0,
+      finalCost: 0,
+      initialDepreciation: 0,
+      periodDepreciation: 0,
+      finalDepreciation: 0,
+      netValue: 0
+    });
+  }, [assetMovementData]);
 
   if (isLoading) {
     return (
@@ -436,25 +567,25 @@ export default function Dashboard() {
             <div className="grid md:grid-cols-4 gap-4">
                 <Card className="border-l-4 border-l-blue-500 shadow-sm py-3 gap-1">
                     <CardHeader className="pb-0">
-                        <CardTitle className="text-sm font-medium text-slate-500 flex justify-between">
+                        <CardTitle className="text-base font-medium text-slate-500 flex justify-between">
                             Orçamento Total
                             <Wallet className="h-4 w-4 text-blue-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-slate-800">{formatCurrency(budgetMetrics.totalBudget)}</div>
-                        <p className="text-xs text-muted-foreground mt-1">Planejado para o período</p>
+                        <div className="text-3xl font-bold text-slate-800">{formatCurrency(budgetMetrics.totalBudget)}</div>
+                        <p className="text-sm text-muted-foreground mt-1">Planejado para o período</p>
                     </CardContent>
                 </Card>
                 <Card className={`border-l-4 shadow-sm py-3 gap-1 ${budgetMetrics.consumptionPct > 95 ? 'border-l-red-500' : budgetMetrics.consumptionPct > 80 ? 'border-l-yellow-500' : 'border-l-green-500'}`}>
                     <CardHeader className="pb-0">
-                        <CardTitle className="text-sm font-medium text-slate-500 flex justify-between">
+                        <CardTitle className="text-base font-medium text-slate-500 flex justify-between">
                             Realizado Acumulado
                             <Activity className="h-4 w-4 text-slate-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-slate-800">{formatCurrency(budgetMetrics.totalRealized)}</div>
+                        <div className="text-3xl font-bold text-slate-800">{formatCurrency(budgetMetrics.totalRealized)}</div>
                         <div className="flex items-center gap-2 mt-1">
                             <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                                 <div 
@@ -462,7 +593,7 @@ export default function Dashboard() {
                                     style={{ width: `${Math.min(budgetMetrics.consumptionPct, 100)}%` }} 
                                 />
                             </div>
-                            <span className={`text-xs font-bold ${budgetMetrics.consumptionPct > 95 ? 'text-red-600' : 'text-slate-600'}`}>
+                            <span className={`text-sm font-bold ${budgetMetrics.consumptionPct > 95 ? 'text-red-600' : 'text-slate-600'}`}>
                                 {budgetMetrics.consumptionPct.toFixed(1)}%
                             </span>
                         </div>
@@ -470,30 +601,30 @@ export default function Dashboard() {
                 </Card>
                 <Card className="border-l-4 border-l-purple-500 shadow-sm py-3 gap-1">
                     <CardHeader className="pb-0">
-                        <CardTitle className="text-sm font-medium text-slate-500 flex justify-between">
+                        <CardTitle className="text-base font-medium text-slate-500 flex justify-between">
                             Saldo Disponível
                             <TrendingDown className="h-4 w-4 text-purple-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className={`text-2xl font-bold ${budgetMetrics.deviation < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        <div className={`text-3xl font-bold ${budgetMetrics.deviation < 0 ? 'text-red-600' : 'text-green-600'}`}>
                             {formatCurrency(budgetMetrics.deviation)}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className="text-sm text-muted-foreground mt-1">
                             {budgetMetrics.deviation < 0 ? 'Orçamento estourado' : 'Dentro do limite'}
                         </p>
                     </CardContent>
                 </Card>
                 <Card className="border-l-4 border-l-orange-500 shadow-sm py-3 gap-1">
                     <CardHeader className="pb-0">
-                        <CardTitle className="text-sm font-medium text-slate-500 flex justify-between">
+                        <CardTitle className="text-base font-medium text-slate-500 flex justify-between">
                             Run Rate (Projeção)
                             <TrendingUp className="h-4 w-4 text-orange-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-slate-800">{formatCurrency(budgetMetrics.runRate)}</div>
-                        <p className="text-xs text-muted-foreground mt-1">Baseado no Burn Rate mensal de {formatCurrency(budgetMetrics.burnRate)}</p>
+                        <div className="text-3xl font-bold text-slate-800">{formatCurrency(budgetMetrics.runRate)}</div>
+                        <p className="text-sm text-muted-foreground mt-1">Baseado no Burn Rate mensal de {formatCurrency(budgetMetrics.burnRate)}</p>
                     </CardContent>
                 </Card>
             </div>
@@ -549,7 +680,7 @@ export default function Dashboard() {
                                             angle={-90}
                                             offset={10}
                                             formatter={(value: number) => value > 0 ? Math.round(value).toLocaleString('pt-BR') : ''} 
-                                            style={{ fill: '#94a3b8', fontSize: 12, textAnchor: 'start' }} 
+                                            style={{ fill: '#94a3b8', fontSize: 14, textAnchor: 'start' }} 
                                         />
                                     </Bar>
                                     <Bar dataKey="realized" name="Realizado" radius={[4, 4, 0, 0]}>
@@ -562,7 +693,7 @@ export default function Dashboard() {
                                             angle={-90}
                                             offset={10}
                                             formatter={(value: number) => value > 0 ? Math.round(value).toLocaleString('pt-BR') : ''} 
-                                            style={{ fill: '#475569', fontSize: 12, fontWeight: 600, textAnchor: 'start' }} 
+                                            style={{ fill: '#475569', fontSize: 14, fontWeight: 600, textAnchor: 'start' }} 
                                         />
                                     </Bar>
                                 </BarChart>
@@ -598,12 +729,12 @@ export default function Dashboard() {
                                         formatter={(value: number) => value}
                                         contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0' }}
                                     />
-                                    <Legend layout="horizontal" verticalAlign="bottom" align="center" formatter={(value, entry: any) => <span className="text-xs text-slate-600 ml-1">{budgetMetrics.projectsByStatus.find(i => i.name === value)?.displayName || value}</span>} />
+                                    <Legend layout="horizontal" verticalAlign="bottom" align="center" formatter={(value, entry: any) => <span className="text-sm text-slate-600 ml-1">{budgetMetrics.projectsByStatus.find(i => i.name === value)?.displayName || value}</span>} />
                                 </PieChart>
                             </ResponsiveContainer>
                             <div className="absolute top-[45%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center bg-white/90 w-24 h-24 rounded-full shadow-sm border border-slate-100 pointer-events-none z-10">
-                                <span className="text-3xl font-bold text-slate-700">{projects?.length || 0}</span>
-                                <span className="text-xs text-slate-500 font-medium uppercase">Obras</span>
+                                <span className="text-4xl font-bold text-slate-700">{projects?.length || 0}</span>
+                                <span className="text-sm text-slate-500 font-medium uppercase">Obras</span>
                             </div>
                         </div>
                     </CardContent>
@@ -618,16 +749,16 @@ export default function Dashboard() {
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead className="text-sm">Centro de Custo</TableHead>
-                                    <TableHead className="text-sm text-right">Consumo</TableHead>
-                                    <TableHead className="text-sm text-center">Status</TableHead>
+                                    <TableHead className="text-base">Centro de Custo</TableHead>
+                                    <TableHead className="text-base text-right">Consumo</TableHead>
+                                    <TableHead className="text-base text-center">Status</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {budgetMetrics.costCenters.map((cc) => (
                                     <TableRow key={cc.name}>
-                                        <TableCell className="text-sm font-medium">{cc.name}</TableCell>
-                                        <TableCell className="text-sm text-right">{cc.pct.toFixed(0)}%</TableCell>
+                                        <TableCell className="text-base font-medium">{cc.name}</TableCell>
+                                        <TableCell className="text-base text-right">{cc.pct.toFixed(0)}%</TableCell>
                                         <TableCell className="text-center">
                                             <div className={`w-3 h-3 rounded-full mx-auto ${cc.status === 'verde' ? 'bg-green-500' : cc.status === 'amarelo' ? 'bg-yellow-400' : 'bg-red-500'}`} title={cc.status} />
                                         </TableCell>
@@ -644,11 +775,21 @@ export default function Dashboard() {
       {/* Seção Imobilizado */}
       {viewMode === 'assets' && (
       <div className="space-y-4 animate-in fade-in duration-500">
-        <div className="flex items-center gap-2">
-            <div className="p-2 bg-orange-100 rounded-lg">
-                <Package className="w-6 h-6 text-orange-600" />
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                    <Package className="w-6 h-6 text-orange-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-slate-700">Gestão do Imobilizado (Ativos)</h2>
             </div>
-            <h2 className="text-xl font-semibold text-slate-700">Gestão do Imobilizado (Ativos)</h2>
+            <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setDepreciationType(prev => prev === 'fiscal' ? 'corporate' : 'fiscal')}
+                className="text-xs text-slate-400 hover:text-slate-600"
+            >
+                {depreciationType === 'fiscal' ? 'Visão Fiscal' : 'Visão Societária'}
+            </Button>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">
@@ -656,12 +797,12 @@ export default function Dashboard() {
                 <div className="grid md:grid-cols-2 gap-6">
                     <Card className="bg-gradient-to-br from-white to-slate-50 py-3 gap-1 shadow-sm">
                         <CardHeader className="pb-0">
-                            <CardTitle className="text-sm font-medium text-slate-500">Valor Total em Ativos</CardTitle>
+                            <CardTitle className="text-base font-medium text-slate-500">Valor Total em Ativos</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-slate-800">{formatCurrency(totalAssetsValue)}</div>
+                            <div className="text-3xl font-bold text-slate-800">{formatCurrency(totalAssetsValue)}</div>
                             <div className="flex items-center gap-2 mt-1">
-                                <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium flex items-center">
+                                <span className="text-sm px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium flex items-center">
                                     <ArrowUpRight className="w-3 h-3 mr-1" /> Ativos
                                 </span>
                             </div>
@@ -670,28 +811,32 @@ export default function Dashboard() {
 
                     <Card className="py-3 gap-1 shadow-sm">
                         <CardHeader className="pb-0">
-                            <CardTitle className="text-sm font-medium text-slate-500">Status dos Ativos</CardTitle>
+                            <CardTitle className="text-base font-medium text-slate-500">Status dos Ativos</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="flex justify-between items-end mb-1">
+                            <div className="flex justify-between items-end mb-2">
                                 <div>
-                                    <span className="text-2xl font-bold text-slate-700">{totalAssets}</span>
-                                    <span className="text-xs text-muted-foreground ml-2">Total</span>
+                                    <span className="text-3xl font-bold text-slate-700">{totalAssets}</span>
+                                    <span className="text-sm text-muted-foreground ml-2">Total</span>
                                 </div>
                             </div>
-                            <div className="space-y-1">
-                                <div className="flex justify-between text-[10px]">
+                            <div className="space-y-3">
+                                <div className="flex justify-between text-base">
                                     <span className="text-slate-600">Concluídos</span>
-                                    <span className="font-medium">{assetsCompleted}</span>
+                                    <span className="font-medium">
+                                        {assetsCompleted} <span className="text-muted-foreground">({totalAssets > 0 ? ((assetsCompleted/totalAssets)*100).toFixed(1) : 0}%)</span>
+                                    </span>
                                 </div>
-                                <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
+                                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                                     <div className="bg-green-500 h-full" style={{ width: `${totalAssets > 0 ? (assetsCompleted/totalAssets)*100 : 0}%` }} />
                                 </div>
-                                <div className="flex justify-between text-[10px]">
+                                <div className="flex justify-between text-base">
                                     <span className="text-slate-600">Em Andamento</span>
-                                    <span className="font-medium">{assetsInProgress}</span>
+                                    <span className="font-medium">
+                                        {assetsInProgress} <span className="text-muted-foreground">({totalAssets > 0 ? ((assetsInProgress/totalAssets)*100).toFixed(1) : 0}%)</span>
+                                    </span>
                                 </div>
-                                <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
+                                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                                     <div className="bg-yellow-500 h-full" style={{ width: `${totalAssets > 0 ? (assetsInProgress/totalAssets)*100 : 0}%` }} />
                                 </div>
                             </div>
@@ -700,11 +845,18 @@ export default function Dashboard() {
                 </div>
 
                 <Card>
-                    <CardHeader className="pb-2">
+                    <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
                         <CardTitle className="text-lg font-semibold text-slate-700">Depreciação Mensal ({new Date().getFullYear()})</CardTitle>
+                        <div className="bg-white/50 backdrop-blur-sm px-3 py-1 rounded text-right">
+                            <p className="text-base text-slate-500 font-medium uppercase">Total Anual</p>
+                            <p className="text-2xl font-bold text-slate-700 leading-none">
+                                {formatCurrency(monthlyDepreciationData.reduce((acc, item) => acc + item.value, 0))}
+                            </p>
+                        </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="h-[200px] w-full flex items-end justify-between gap-2 pt-8 pb-2">
+                        <div className="relative">
+                            <div className="h-[200px] w-full flex items-end justify-between gap-2 pt-4 pb-2">
                             {monthlyDepreciationData.map((item) => {
                                 const maxValue = Math.max(...monthlyDepreciationData.map(d => d.value), 1);
                                 const heightPercentage = maxValue > 0 ? (item.value / maxValue) * 100 : 0;
@@ -716,15 +868,16 @@ export default function Dashboard() {
                                                 className="w-full mx-1 bg-blue-500 hover:bg-blue-600 transition-all duration-500 rounded-t-sm relative group-hover:shadow-lg"
                                                 style={{ height: `${heightPercentage}%` }}
                                             >
-                                                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 text-[10px] text-slate-600 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity">
+                                                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 text-base text-slate-600 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity">
                                                     {item.value > 0 && formatCurrency(item.value)}
                                                 </div>
                                             </div>
                                         </div>
-                                        <span className="text-[10px] text-slate-500 font-medium uppercase">{item.name}</span>
+                                        <span className="text-base text-slate-500 font-medium uppercase">{item.name}</span>
                                     </div>
                                 );
                             })}
+                        </div>
                         </div>
                     </CardContent>
                 </Card>
@@ -740,7 +893,7 @@ export default function Dashboard() {
                         <ResponsiveContainer width="100%" height="100%">
                             <RadarChart cx="50%" cy="50%" outerRadius="80%" data={assetClassesData.slice(0, 6)}>
                                 <PolarGrid stroke="#cbd5e1" />
-                                <PolarAngleAxis dataKey="name" tick={{ fill: '#475569', fontSize: 14, fontWeight: 500 }} tickFormatter={(val) => val.split(' ')[0]} />
+                                <PolarAngleAxis dataKey="name" tick={{ fill: '#475569', fontSize: 16, fontWeight: 500 }} tickFormatter={(val) => val.toLowerCase() === 'imobilizado em andamento' ? 'Andamento' : val.split(' ')[0]} />
                                 <PolarRadiusAxis angle={30} domain={[0, 'auto']} tick={{ fill: '#64748b', fontSize: 12 }} tickFormatter={(value) => new Intl.NumberFormat('pt-BR', { notation: "compact" }).format(value)} />
                                 <Radar name="Custo" dataKey="cost" stroke="#09c357" fill="#09c357" fillOpacity={0.7} />
                                 <RechartsTooltip 
@@ -756,52 +909,6 @@ export default function Dashboard() {
             </div>
         </div>
 
-        {/* Quadro de Movimentação */}
-        <Card>
-            <CardHeader className="pb-2">
-                <CardTitle className="text-lg font-semibold text-slate-700">Quadro de Movimentação do Imobilizado (YTD)</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <div className="rounded-md border overflow-x-auto">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Classe</TableHead>
-                                <TableHead className="text-right">Saldo Inicial (Custo)</TableHead>
-                                <TableHead className="text-right">Adições</TableHead>
-                                <TableHead className="text-right">Saldo Final (Custo)</TableHead>
-                                <TableHead className="text-right">Deprec. Acum. Inicial</TableHead>
-                                <TableHead className="text-right">Deprec. Período</TableHead>
-                                <TableHead className="text-right">Deprec. Acum. Final</TableHead>
-                                <TableHead className="text-right">Valor Líquido</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {assetMovementData.map((item) => (
-                                <TableRow key={item.name}>
-                                    <TableCell className="font-medium whitespace-nowrap">{item.name}</TableCell>
-                                    <TableCell className="text-right">{formatCurrency(item.initialCost)}</TableCell>
-                                    <TableCell className="text-right text-blue-600">+{formatCurrency(item.additions)}</TableCell>
-                                    <TableCell className="text-right font-medium">{formatCurrency(item.finalCost)}</TableCell>
-                                    <TableCell className="text-right text-slate-500">{formatCurrency(item.initialDepreciation)}</TableCell>
-                                    <TableCell className="text-right text-red-500">-{formatCurrency(item.periodDepreciation)}</TableCell>
-                                    <TableCell className="text-right text-slate-500">{formatCurrency(item.finalDepreciation)}</TableCell>
-                                    <TableCell className="text-right font-bold text-slate-800">{formatCurrency(item.netValue)}</TableCell>
-                                </TableRow>
-                            ))}
-                            {assetMovementData.length === 0 && (
-                                <TableRow>
-                                    <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
-                                        Nenhum dado de movimentação disponível.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
-            </CardContent>
-        </Card>
-
         {/* Tabela e Gráficos por Classe */}
         <Card>
             <CardHeader className="pb-2">
@@ -809,15 +916,15 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
                 <div className="rounded-md border">
-                    <Table>
+                    <Table className="text-base">
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Classe do Ativo</TableHead>
-                                <TableHead className="text-center">Qtd</TableHead>
-                                <TableHead className="text-right">Valor de Custo</TableHead>
-                                <TableHead className="text-right">Depreciação Acum.</TableHead>
-                                <TableHead className="text-right">Valor Residual</TableHead>
-                                <TableHead className="w-[200px]">Composição (Deprec. vs Residual)</TableHead>
+                                <TableHead className="text-base">Classe do Ativo</TableHead>
+                                <TableHead className="text-center text-base">Qtd</TableHead>
+                                <TableHead className="text-right text-base">Valor de Custo</TableHead>
+                                <TableHead className="text-right text-base">Depreciação Acum.</TableHead>
+                                <TableHead className="text-right text-base">Valor Residual</TableHead>
+                                <TableHead className="w-[200px] text-base">Composição (Deprec. vs Residual)</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -858,6 +965,78 @@ export default function Dashboard() {
                                 </TableRow>
                             )}
                         </TableBody>
+                        {assetClassesTotals && (
+                            <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-200">
+                                <TableRow>
+                                    <TableCell>TOTAL GERAL</TableCell>
+                                    <TableCell className="text-center">{assetClassesTotals.count}</TableCell>
+                                    <TableCell className="text-right">{formatCurrency(assetClassesTotals.cost)}</TableCell>
+                                    <TableCell className="text-right text-red-600">{formatCurrency(assetClassesTotals.depreciation)}</TableCell>
+                                    <TableCell className="text-right text-green-600">{formatCurrency(assetClassesTotals.residual)}</TableCell>
+                                    <TableCell></TableCell>
+                                </TableRow>
+                            </tfoot>
+                        )}
+                    </Table>
+                </div>
+            </CardContent>
+        </Card>
+
+        {/* Quadro de Movimentação */}
+        <Card>
+            <CardHeader className="pb-2">
+                <CardTitle className="text-lg font-semibold text-slate-700">Quadro de Movimentação do Imobilizado (YTD)</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <div className="rounded-md border overflow-x-auto">
+                    <Table className="text-base">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead className="text-base">Classe</TableHead>
+                                <TableHead className="text-right text-base">Saldo Inicial (Custo)</TableHead>
+                                <TableHead className="text-right text-base">Adições</TableHead>
+                                <TableHead className="text-right text-base">Saldo Final (Custo)</TableHead>
+                                <TableHead className="text-right text-base">Deprec. Acum. Inicial</TableHead>
+                                <TableHead className="text-right text-base">Deprec. Período</TableHead>
+                                <TableHead className="text-right text-base">Deprec. Acum. Final</TableHead>
+                                <TableHead className="text-right text-base">Valor Líquido</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {assetMovementData.map((item) => (
+                                <TableRow key={item.name}>
+                                    <TableCell className="font-medium whitespace-nowrap">{item.name}</TableCell>
+                                    <TableCell className="text-right">{formatCurrency(item.initialCost)}</TableCell>
+                                    <TableCell className="text-right text-blue-600">+{formatCurrency(item.additions)}</TableCell>
+                                    <TableCell className="text-right font-medium">{formatCurrency(item.finalCost)}</TableCell>
+                                    <TableCell className="text-right text-slate-500">{formatCurrency(item.initialDepreciation)}</TableCell>
+                                    <TableCell className="text-right text-red-500">-{formatCurrency(item.periodDepreciation)}</TableCell>
+                                    <TableCell className="text-right text-slate-500">{formatCurrency(item.finalDepreciation)}</TableCell>
+                                    <TableCell className="text-right font-bold text-slate-800">{formatCurrency(item.netValue)}</TableCell>
+                                </TableRow>
+                            ))}
+                            {assetMovementData.length === 0 && (
+                                <TableRow>
+                                    <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
+                                        Nenhum dado de movimentação disponível.
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                        {assetMovementTotals && (
+                            <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-200">
+                                <TableRow>
+                                    <TableCell>TOTAL GERAL</TableCell>
+                                    <TableCell className="text-right">{formatCurrency(assetMovementTotals.initialCost)}</TableCell>
+                                    <TableCell className="text-right text-blue-600">+{formatCurrency(assetMovementTotals.additions)}</TableCell>
+                                    <TableCell className="text-right">{formatCurrency(assetMovementTotals.finalCost)}</TableCell>
+                                    <TableCell className="text-right text-slate-500">{formatCurrency(assetMovementTotals.initialDepreciation)}</TableCell>
+                                    <TableCell className="text-right text-red-500">-{formatCurrency(assetMovementTotals.periodDepreciation)}</TableCell>
+                                    <TableCell className="text-right text-slate-500">{formatCurrency(assetMovementTotals.finalDepreciation)}</TableCell>
+                                    <TableCell className="text-right text-slate-800">{formatCurrency(assetMovementTotals.netValue)}</TableCell>
+                                </TableRow>
+                            </tfoot>
+                        )}
                     </Table>
                 </div>
             </CardContent>

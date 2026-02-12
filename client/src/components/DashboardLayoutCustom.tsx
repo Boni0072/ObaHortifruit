@@ -4,7 +4,7 @@ import { collection, onSnapshot, updateDoc, doc } from "firebase/firestore";
 import { useAuth } from '@/_core/hooks/useAuth';
 import { getLoginUrl } from '@/const';
 import { useLocation } from 'wouter';
-import { Menu, X, LogOut, Home, FileText, DollarSign, Package, BarChart3, Landmark, Users, Bell, CheckCircle2, XCircle, ClipboardList, Eye, Check } from 'lucide-react';
+import { Menu, X, LogOut, Home, FileText, DollarSign, Package, BarChart3, Landmark, Users, Bell, CheckCircle2, XCircle, ClipboardList, Eye, Check, ArrowRightLeft, TrendingDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { trpc } from "@/lib/trpc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -42,6 +42,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [location, setLocation] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [pendingInventoryCount, setPendingInventoryCount] = useState(0);
+  const [myPendingSchedules, setMyPendingSchedules] = useState<any[]>([]);
+  const [pendingInventoryApprovalCount, setPendingInventoryApprovalCount] = useState(0);
   const [projects, setProjects] = useState<any[]>([]);
   const [viewProject, setViewProject] = useState<any | null>(null);
   
@@ -87,16 +89,18 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }, [pendingProjects.length]);
 
   const prevInventoryCountRef = useRef(0);
+  const prevInventoryApprovalCountRef = useRef(0);
 
   useEffect(() => {
     if (!userId) return;
 
     const unsubscribe = onSnapshot(collection(db, "inventory_schedules"), (snapshot) => {
-      const schedules = snapshot.docs.map(doc => doc.data());
-      // Check if current user is in any pending schedule
+      const schedules = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // 1. Check if current user is in any pending schedule (Execution)
       const mySchedules = schedules.filter((s: any) =>
         s.status === 'pending' && s.userIds && s.userIds.includes(userId)
       );
+      setMyPendingSchedules(mySchedules);
       
       const currentCount = mySchedules.length;
 
@@ -108,6 +112,21 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       
       prevInventoryCountRef.current = currentCount;
       setPendingInventoryCount(currentCount);
+
+      // 2. Check if current user has any pending approvals (Requester)
+      const myApprovals = schedules.filter((s: any) => 
+        s.status === 'waiting_approval' && (!s.requesterId || String(s.requesterId) === String(userId))
+      );
+      
+      const currentApprovalCount = myApprovals.length;
+
+      if (currentApprovalCount > prevInventoryApprovalCountRef.current) {
+           const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
+           audio.play().catch(e => console.log("Audio play failed", e));
+           toast.info(`Você tem ${currentApprovalCount} aprovações de inventário pendentes.`);
+      }
+      prevInventoryApprovalCountRef.current = currentApprovalCount;
+      setPendingInventoryApprovalCount(currentApprovalCount);
     });
 
     return () => unsubscribe();
@@ -150,7 +169,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     toast.success(`Projeto ${project.name} rejeitado.`);
   };
 
-  const totalNotifications = pendingProjects.length + pendingInventoryCount;
+  const totalNotifications = pendingProjects.length + pendingInventoryCount + pendingInventoryApprovalCount;
 
   useEffect(() => {
     const baseTitle = "Control Obra/Ativos";
@@ -179,8 +198,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { id: 'projects', label: 'Obras', icon: FileText, path: '/projects' },
     { id: 'budgets', label: 'Budgets', icon: DollarSign, path: '/budgets' },
     { id: 'assets', label: 'Ativo em andamento', icon: Package, path: '/assets' },
+    { id: 'asset-movements', label: 'Movimentações', icon: ArrowRightLeft, path: '/asset-movements' },
+    { id: 'asset-depreciation', label: 'Depreciação', icon: TrendingDown, path: '/asset-depreciation' },
     { id: 'inventory', label: 'Inventário de Ativos', icon: ClipboardList, path: '/inventory' },
-    { id: 'reports', label: 'Relatórios', icon: FileText, path: '/reports' },
+    { id: 'reports', label: 'Relatórios', icon: BarChart3, path: '/reports' },
     { id: 'accounting', label: 'Estrutura Contábil', icon: Landmark, path: '/accounting' },
     { id: 'users', label: 'Usuários', icon: Users, path: '/users' },
   ];
@@ -232,6 +253,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             const Icon = item.icon;
             const isActive = location === item.path;
             const isInventory = item.path === '/inventory';
+            const hasNotification = isInventory && (pendingInventoryCount > 0 || pendingInventoryApprovalCount > 0);
+
             return (
               <button
                 key={item.path}
@@ -242,11 +265,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     : 'text-white/90 hover:bg-white/10'
                 }`}
               >
-                <Icon size={20} className={isInventory && pendingInventoryCount > 0 ? "text-orange-400 animate-pulse" : ""} />
-                {sidebarOpen && <span className={isInventory && pendingInventoryCount > 0 ? "text-orange-400 font-bold animate-pulse" : ""}>{item.label}</span>}
-                {sidebarOpen && isInventory && pendingInventoryCount > 0 && (
+                <Icon size={20} className={hasNotification ? "text-orange-400 animate-pulse" : ""} />
+                {sidebarOpen && <span className={hasNotification ? "text-orange-400 font-bold animate-pulse" : ""}>{item.label}</span>}
+                {sidebarOpen && isInventory && (pendingInventoryCount > 0 || pendingInventoryApprovalCount > 0) && (
                   <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">
-                    {pendingInventoryCount}
+                    {pendingInventoryCount + pendingInventoryApprovalCount}
                   </span>
                 )}
               </button>
@@ -369,6 +392,28 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   <DialogTitle>Notificações ({totalNotifications})</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 mt-4">
+                  {/* Seção de Aprovação de Inventário */}
+                  {pendingInventoryApprovalCount > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-center gap-2 text-blue-800 font-semibold mb-2">
+                        <CheckCircle2 size={18} />
+                        <span>Aprovação de Inventário</span>
+                      </div>
+                      <p className="text-sm text-blue-700 mb-3">
+                        Você tem <strong>{pendingInventoryApprovalCount}</strong> inventário(s) aguardando sua aprovação.
+                      </p>
+                      <div className="flex justify-end">
+                        <Button 
+                          size="sm" 
+                          className="bg-blue-600 hover:bg-blue-700 text-white w-full"
+                          onClick={() => setLocation('/inventory')}
+                        >
+                          Ir para Inventário
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Seção de Inventário */}
                   {pendingInventoryCount > 0 && (
                     <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
@@ -383,7 +428,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                         <Button 
                           size="sm" 
                           className="bg-orange-600 hover:bg-orange-700 text-white w-full"
-                          onClick={() => setLocation('/inventory')}
+                          onClick={() => {
+                            if (myPendingSchedules.length === 1) {
+                              setLocation(`/inventory?schedule=${myPendingSchedules[0].id}`);
+                            } else {
+                              setLocation('/inventory');
+                            }
+                          }}
                         >
                           Ir para Inventário
                         </Button>

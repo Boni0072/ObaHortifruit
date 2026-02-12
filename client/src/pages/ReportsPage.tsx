@@ -269,7 +269,7 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-slate-700 flex items-center gap-2">
         <FileText className="h-8 w-8" />
-        Relatórios e Aprovações
+        Relatórios
       </h1>
 
       {/* Seção de Aprovações Pendentes */}

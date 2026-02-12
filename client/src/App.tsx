@@ -16,6 +16,7 @@ import Login from "./pages/Login";
 import AssetInventoryPage from "./pages/AssetInventoryPage";
 import ReportsPage from "./pages/ReportsPage";
 import AssetDepreciationPage from "./pages/AssetDepreciationPage";
+import AssetMovementsPage from "./pages/AssetMovementsPage";
 
 // App Router Configuration
 function Router() {
@@ -48,6 +49,20 @@ function Router() {
         {() => (
           <DashboardLayout>
             <AssetsPage />
+          </DashboardLayout>
+        )}
+      </Route>
+      <Route path={"/asset-movements"}>
+        {() => (
+          <DashboardLayout>
+            <AssetMovementsPage />
+          </DashboardLayout>
+        )}
+      </Route>
+      <Route path={"/asset-depreciation"}>
+        {() => (
+          <DashboardLayout>
+            <AssetDepreciationPage />
           </DashboardLayout>
         )}
       </Route>

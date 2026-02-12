@@ -202,8 +202,8 @@ function ChartOfAccountsTab() {
             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
           <div>
-            <CardTitle>Plano de Contas</CardTitle>
-            <CardDescription>Cadastro de contas contábeis para classificação de despesas.</CardDescription>
+            <CardTitle className="text-xl">Plano de Contas</CardTitle>
+            <CardDescription className="text-base">Cadastro de contas contábeis para classificação de despesas.</CardDescription>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -236,15 +236,15 @@ function ChartOfAccountsTab() {
       <CardContent className="space-y-6">
         <form onSubmit={handleSubmit} className="flex gap-4 items-end bg-green-50 p-4 rounded-md border border-green-100">
           <div className="w-[20%]">
-            <label className="text-sm font-medium">Código</label>
+            <label className="text-base font-medium">Código</label>
             <Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} placeholder="Ex: 1.1.01" required />
           </div>
           <div className="flex-1">
-            <label className="text-sm font-medium">Nome da Conta</label>
+            <label className="text-base font-medium">Nome da Conta</label>
             <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Ex: Caixa Geral" required />
           </div>
           <div className="w-[20%]">
-            <label className="text-sm font-medium">Tipo</label>
+            <label className="text-base font-medium">Tipo</label>
             <Select value={form.type} onValueChange={(v) => setForm({...form, type: v})}>
               <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
               <SelectContent>
@@ -273,7 +273,7 @@ function ChartOfAccountsTab() {
       <CardContent>
         <div className="flex gap-4 mb-4">
           <div className="w-64">
-            <label className="text-sm font-medium mb-1 block">Filtrar por Nome</label>
+            <label className="text-base font-medium mb-1 block">Filtrar por Nome</label>
             <Input
               placeholder="Filtrar por nome..."
               value={nameFilter}
@@ -281,7 +281,7 @@ function ChartOfAccountsTab() {
             />
           </div>
           <div className="w-64">
-            <label className="text-sm font-medium mb-1 block">Filtrar por Tipo</label>
+            <label className="text-base font-medium mb-1 block">Filtrar por Tipo</label>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
               <SelectTrigger>
                 <SelectValue placeholder="Todos" />
@@ -300,25 +300,25 @@ function ChartOfAccountsTab() {
         </div>
 
         {isLoading ? <Loader2 className="animate-spin" /> : (
-          <Table>
+          <Table className="text-base">
             <TableHeader>
               <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                <TableHead className="text-base">Código</TableHead>
+                <TableHead className="text-base">Nome</TableHead>
+                <TableHead className="text-base">Tipo</TableHead>
+                <TableHead className="text-right text-base">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredAccounts?.map((acc: AccountingAccount) => (
                 <TableRow key={acc.id}>
-                  <TableCell className="font-mono">{acc.code}</TableCell>
+                  <TableCell className="font-mono text-base">{acc.code}</TableCell>
                   <TableCell>{acc.name}</TableCell>
                   <TableCell>
                     {acc.type ? (
-                      <Badge variant="secondary" className="font-normal">{acc.type}</Badge>
+                      <Badge variant="secondary" className="font-normal text-sm">{acc.type}</Badge>
                     ) : (
-                      <span className="text-muted-foreground text-xs italic">(não definido)</span>
+                      <span className="text-muted-foreground text-sm italic">(não definido)</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right">
@@ -581,8 +581,8 @@ function AssetClassesTab() {
             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
           <div>
-            <CardTitle>Estrutura Unificada: Contas e Classes</CardTitle>
-            <CardDescription>Defina as classes de ativos e suas contas contábeis associadas.</CardDescription>
+            <CardTitle className="text-xl">Estrutura Unificada: Contas e Classes</CardTitle>
+            <CardDescription className="text-base">Defina as classes de ativos e suas contas contábeis associadas.</CardDescription>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -633,54 +633,54 @@ function AssetClassesTab() {
         <form onSubmit={handleSubmit} className="space-y-4 bg-green-50 p-4 rounded-md border border-green-100">
           <div className="grid grid-cols-4 gap-4">
             <div>
-              <label className="text-sm font-medium">Classe Imobilizado</label>
+              <label className="text-base font-medium">Classe Imobilizado</label>
               <Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} placeholder="Ex: 3.01.02" required />
             </div>
             <div className="col-span-3">
-              <label className="text-sm font-medium">Descrição Classe</label>
+              <label className="text-base font-medium">Descrição Classe</label>
               <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Ex: Veículos" required />
             </div>
             <div>
-              <label className="text-sm font-medium">Vida Físcal</label>
+              <label className="text-base font-medium">Vida Físcal</label>
               <Input type="number" value={form.usefulLife} onChange={e => setForm({...form, usefulLife: e.target.value})} placeholder="Ex: 5" required />
             </div>
             <div>
-              <label className="text-sm font-medium">Vida Societária</label>
+              <label className="text-base font-medium">Vida Societária</label>
               <Input type="number" value={form.corporateUsefulLife} onChange={e => setForm({...form, corporateUsefulLife: e.target.value})} placeholder="Ex: 8" required />
             </div>
           </div>
 
           <div className="grid grid-cols-4 gap-4 border-t pt-4">
             <div>
-              <label className="text-sm font-medium">Conta Custo</label>
+              <label className="text-base font-medium">Conta Custo</label>
               <Input value={form.assetAccountCode} onChange={e => setForm({...form, assetAccountCode: e.target.value})} placeholder="Ex: 1.2.3.01.01" />
             </div>
             <div className="col-span-3">
-              <label className="text-sm font-medium">Descrição de Custo</label>
+              <label className="text-base font-medium">Descrição de Custo</label>
               <Input value={form.assetAccountDescription} onChange={e => setForm({...form, assetAccountDescription: e.target.value})} placeholder="Ex: Veículos (Custo)" />
             </div>
             <div>
-              <label className="text-sm font-medium">Conta Deprec</label>
+              <label className="text-base font-medium">Conta Deprec</label>
               <Input value={form.depreciationAccountCode} onChange={e => setForm({...form, depreciationAccountCode: e.target.value})} placeholder="Ex: 1.2.3.09.01" />
             </div>
             <div className="col-span-3">
-              <label className="text-sm font-medium">Descrição Deprec</label>
+              <label className="text-base font-medium">Descrição Deprec</label>
               <Input value={form.depreciationAccountDescription} onChange={e => setForm({...form, depreciationAccountDescription: e.target.value})} placeholder="Ex: Depreciação Acumulada de Veículos" />
             </div>
             <div>
-              <label className="text-sm font-medium">Conta Amort</label>
+              <label className="text-base font-medium">Conta Amort</label>
               <Input value={form.amortizationAccountCode} onChange={e => setForm({...form, amortizationAccountCode: e.target.value})} placeholder="Ex: 1.2.5.01.02" />
             </div>
             <div className="col-span-3">
-              <label className="text-sm font-medium">Descrição Amort</label>
+              <label className="text-base font-medium">Descrição Amort</label>
               <Input value={form.amortizationAccountDescription} onChange={e => setForm({...form, amortizationAccountDescription: e.target.value})} placeholder="Ex: Amortização Veículos" />
             </div>
             <div>
-              <label className="text-sm font-medium">Conta Resultado</label>
+              <label className="text-base font-medium">Conta Resultado</label>
               <Input value={form.resultAccountCode} onChange={e => setForm({...form, resultAccountCode: e.target.value})} placeholder="Ex: 1.2.6.01.02" />
             </div>
             <div className="col-span-2">
-              <label className="text-sm font-medium">Descrição Resultado</label>
+              <label className="text-base font-medium">Descrição Resultado</label>
               <Input value={form.resultAccountDescription} onChange={e => setForm({...form, resultAccountDescription: e.target.value})} placeholder="Ex: Resultado Veículos" />
             </div>
             <div className="flex gap-2 items-end">
@@ -700,42 +700,42 @@ function AssetClassesTab() {
       )}
       <CardContent>
         {isLoading ? <Loader2 className="animate-spin" /> : (
-          <Table>
+          <Table className="text-base">
             <TableHeader>
               <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Classe</TableHead>
-                <TableHead>V. Útil</TableHead>
-                <TableHead>V. Societária</TableHead>
-                <TableHead>Custo</TableHead>
-                <TableHead>Deprec</TableHead>
-                <TableHead>Amort</TableHead>
-                <TableHead>Resultado</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                <TableHead className="text-base">Código</TableHead>
+                <TableHead className="text-base">Classe</TableHead>
+                <TableHead className="text-base">V. Útil</TableHead>
+                <TableHead className="text-base">V. Societária</TableHead>
+                <TableHead className="text-base">Custo</TableHead>
+                <TableHead className="text-base">Deprec</TableHead>
+                <TableHead className="text-base">Amort</TableHead>
+                <TableHead className="text-base">Resultado</TableHead>
+                <TableHead className="text-right text-base">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {classes?.map((cls: AssetClass) => (
                 <TableRow key={cls.id}>
-                  <TableCell className="font-mono">{cls.code}</TableCell>
+                  <TableCell className="font-mono text-base">{cls.code}</TableCell>
                   <TableCell>{cls.name}</TableCell>
                   <TableCell>{cls.usefulLife}</TableCell>
                   <TableCell>{cls.corporateUsefulLife}</TableCell>
-                  <TableCell className="text-xs">
-                    <div className="font-mono">{cls.assetAccountCode}</div>
-                    <div className="text-muted-foreground">{cls.assetAccountDescription}</div>
+                  <TableCell className="text-sm">
+                    <div className="font-mono text-base">{cls.assetAccountCode}</div>
+                    <div className="text-muted-foreground text-sm">{cls.assetAccountDescription}</div>
                   </TableCell>
-                  <TableCell className="text-xs">
-                    <div className="font-mono">{cls.depreciationAccountCode}</div>
-                    <div className="text-muted-foreground">{cls.depreciationAccountDescription}</div>
+                  <TableCell className="text-sm">
+                    <div className="font-mono text-base">{cls.depreciationAccountCode}</div>
+                    <div className="text-muted-foreground text-sm">{cls.depreciationAccountDescription}</div>
                   </TableCell>
-                  <TableCell className="text-xs">
-                    <div className="font-mono">{cls.amortizationAccountCode}</div>
-                    <div className="text-muted-foreground">{cls.amortizationAccountDescription}</div>
+                  <TableCell className="text-sm">
+                    <div className="font-mono text-base">{cls.amortizationAccountCode}</div>
+                    <div className="text-muted-foreground text-sm">{cls.amortizationAccountDescription}</div>
                   </TableCell>
-                  <TableCell className="text-xs">
-                    <div className="font-mono">{cls.resultAccountCode}</div>
-                    <div className="text-muted-foreground">{cls.resultAccountDescription}</div>
+                  <TableCell className="text-sm">
+                    <div className="font-mono text-base">{cls.resultAccountCode}</div>
+                    <div className="text-muted-foreground text-sm">{cls.resultAccountDescription}</div>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => handleEdit(cls)}>
@@ -872,8 +872,8 @@ function CostCentersTab() {
             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
           <div>
-            <CardTitle>Centros de Custo</CardTitle>
-            <CardDescription>Estrutura de centros de custo para alocação de despesas.</CardDescription>
+            <CardTitle className="text-xl">Centros de Custo</CardTitle>
+            <CardDescription className="text-base">Estrutura de centros de custo para alocação de despesas.</CardDescription>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -906,15 +906,15 @@ function CostCentersTab() {
       <CardContent className="space-y-6">
         <form onSubmit={handleSubmit} className="flex gap-4 items-end bg-green-50 p-4 rounded-md border border-green-100">
           <div className="w-1/4">
-            <label className="text-sm font-medium">Código</label>
+            <label className="text-base font-medium">Código</label>
             <Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} placeholder="Ex: CC-01" required />
           </div>
           <div className="w-1/3">
-            <label className="text-sm font-medium">Nome</label>
+            <label className="text-base font-medium">Nome</label>
             <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Ex: Administrativo" required />
           </div>
           <div className="flex-1">
-            <label className="text-sm font-medium">Departamento</label>
+            <label className="text-base font-medium">Departamento</label>
             <Input value={form.department} onChange={e => setForm({...form, department: e.target.value})} placeholder="Ex: Diretoria" required />
           </div>
           <div className="flex gap-2">
@@ -933,19 +933,19 @@ function CostCentersTab() {
       )}
       <CardContent>
         {isLoading ? <Loader2 className="animate-spin" /> : (
-          <Table>
+          <Table className="text-base">
             <TableHeader>
               <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>Departamento</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                <TableHead className="text-base">Código</TableHead>
+                <TableHead className="text-base">Nome</TableHead>
+                <TableHead className="text-base">Departamento</TableHead>
+                <TableHead className="text-right text-base">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {centers?.map((cc: CostCenter) => (
                 <TableRow key={cc.id}>
-                  <TableCell className="font-mono">{cc.code}</TableCell>
+                  <TableCell className="font-mono text-base">{cc.code}</TableCell>
                   <TableCell>{cc.name}</TableCell>
                   <TableCell>{cc.department}</TableCell>
                   <TableCell className="text-right">

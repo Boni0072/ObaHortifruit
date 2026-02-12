@@ -79,7 +79,7 @@ export default function Login() {
           name: "Administrador (Dev)",
           email: "admin@oba.com",
           role: "diretoria",
-          allowedPages: ["dashboard", "projects", "assets", "budgets", "accounting", "users"]
+          allowedPages: ["dashboard", "projects", "assets", "asset-movements", "asset-depreciation", "budgets", "inventory", "reports", "accounting", "users"]
         }));
         
         console.log("Login Admin (Dev) realizado. Token:", token);

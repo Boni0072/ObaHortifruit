@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
 // Definição dos perfis solicitados
-const ROLES = [
+export const ROLES = [
   { value: "engenharia", label: "Engenharia" },
   { value: "diretoria", label: "Diretoria" },
   { value: "aprovacao", label: "Aprovação" },
@@ -21,14 +21,16 @@ const ROLES = [
 ];
 
 // Páginas disponíveis para controle de acesso
-const AVAILABLE_PAGES = [
+export const AVAILABLE_PAGES = [
   { id: "dashboard", label: "Dashboard" },
   { id: "projects", label: "Obras" },
-  { id: "assets", label: "Ativos" },
   { id: "budgets", label: "Budgets" },
-  { id: "inventory", label: "Inventário" },
+  { id: "assets", label: "Ativo em andamento" },
+  { id: "asset-movements", label: "Movimentações" },
+  { id: "asset-depreciation", label: "Depreciação" },
+  { id: "inventory", label: "Inventário de Ativos" },
   { id: "reports", label: "Relatórios" },
-  { id: "accounting", label: "Contabilidade" },
+  { id: "accounting", label: "Estrutura Contábil" },
   { id: "users", label: "Usuários" },
 ];
 

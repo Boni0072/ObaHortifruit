@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
 import { trpc } from "@/lib/trpc";
@@ -9,14 +9,17 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Trash2, CheckCircle, AlertTriangle, Pencil, Eye, ChevronDown, ChevronUp, Download, Upload } from "lucide-react";
+import { Loader2, Plus, Trash2, CheckCircle, AlertTriangle, Pencil, Eye, ChevronDown, ChevronUp, ChevronRight, Download, Upload, ArrowRightLeft, Filter } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AssetCalculations from "./AssetCalculations";
 import * as XLSX from "xlsx";
+import { useLocation, Link } from "wouter";
 
 export default function AssetsPage() {
+  const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const [projects, setProjects] = useState<any[]>([]);
 
@@ -41,6 +44,8 @@ export default function AssetsPage() {
     description: "",
     costCenter: "",
     projectId: "all",
+    assetClass: "all",
+    status: "all",
   });
 
   const [assets, setAssets] = useState<any[]>([]);
@@ -392,8 +397,45 @@ export default function AssetsPage() {
     const costCenterValue = typeof asset.costCenter === 'object' ? asset.costCenter?.code : asset.costCenter;
     const matchesCostCenter = !filters.costCenter || (costCenterValue || "").toLowerCase().includes(filters.costCenter.toLowerCase());
     const matchesProject = filters.projectId === "all" || String(asset.projectId) === filters.projectId;
-    return matchesAssetNumber && matchesTagNumber && matchesDescription && matchesCostCenter && matchesProject;
+    const matchesAssetClass = filters.assetClass === "all" || asset.assetClass === filters.assetClass;
+    const matchesStatus = filters.status === "all" || asset.status === filters.status;
+    return matchesAssetNumber && matchesTagNumber && matchesDescription && matchesCostCenter && matchesProject && matchesAssetClass && matchesStatus;
   });
+
+  const groupedAssets = useMemo(() => {
+    if (!filteredAssets) return {};
+    const groups: Record<string, any[]> = {};
+    filteredAssets.forEach(asset => {
+      const cls = asset.assetClass || "Sem Classe";
+      if (!groups[cls]) groups[cls] = [];
+      groups[cls].push(asset);
+    });
+    return Object.keys(groups).sort().reduce((acc, key) => {
+        acc[key] = groups[key];
+        return acc;
+    }, {} as Record<string, any[]>);
+  }, [filteredAssets]);
+
+  const [collapsedClasses, setCollapsedClasses] = useState<Record<string, boolean>>({});
+
+  const toggleClass = (cls: string) => {
+    setCollapsedClasses(prev => ({ ...prev, [cls]: !prev[cls] }));
+  };
+
+  const toggleAllClasses = () => {
+    const allKeys = Object.keys(groupedAssets);
+    const allCollapsed = allKeys.length > 0 && allKeys.every(cls => collapsedClasses[cls]);
+    
+    if (allCollapsed) {
+      setCollapsedClasses({});
+    } else {
+      const newCollapsed: Record<string, boolean> = {};
+      allKeys.forEach(cls => {
+        newCollapsed[cls] = true;
+      });
+      setCollapsedClasses(newCollapsed);
+    }
+  };
 
   const totalAssetsValue = filteredAssets?.reduce((acc, asset) => acc + getAssetValue(asset), 0) || 0;
 
@@ -444,9 +486,133 @@ export default function AssetsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-slate-700">Ativos em Andamento</h1>
+        <h1 className="text-3xl font-bold text-slate-700">Ativo em andamento</h1>
         
         <div className="flex gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline">
+                  <Filter className="mr-2 h-4 w-4" />
+                  Filtros
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-4" align="end">
+                <div className="space-y-4">
+                  <h4 className="font-medium leading-none">Filtros de Ativos</h4>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Obra</label>
+                    <Select value={filters.projectId} onValueChange={(v) => setFilters(prev => ({ ...prev, projectId: v }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todas as obras" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as Obras</SelectItem>
+                        {projects?.map((p) => (
+                          <SelectItem key={p.id} value={p.id.toString()}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Classe do Ativo</label>
+                    <Select value={filters.assetClass} onValueChange={(v) => setFilters(prev => ({ ...prev, assetClass: v }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todas as classes" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as Classes</SelectItem>
+                        {assetClasses?.map((c) => (
+                          <SelectItem key={c.id} value={c.name}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Status</label>
+                    <Select value={filters.status} onValueChange={(v) => setFilters(prev => ({ ...prev, status: v }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todos os status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="planejamento">Planejamento</SelectItem>
+                        <SelectItem value="em_desenvolvimento">Em Desenvolvimento</SelectItem>
+                        <SelectItem value="concluido">Concluído</SelectItem>
+                        <SelectItem value="parado">Parado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Número do Ativo</label>
+                    <Input 
+                      placeholder="Filtrar..." 
+                      value={filters.assetNumber}
+                      onChange={(e) => setFilters(prev => ({ ...prev, assetNumber: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Nº Plaqueta</label>
+                    <Input 
+                      placeholder="Filtrar..." 
+                      value={filters.tagNumber}
+                      onChange={(e) => setFilters(prev => ({ ...prev, tagNumber: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Descrição</label>
+                    <Input 
+                      placeholder="Filtrar..." 
+                      value={filters.description}
+                      onChange={(e) => setFilters(prev => ({ ...prev, description: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Centro de Custo</label>
+                    <Input 
+                      placeholder="Filtrar..." 
+                      value={filters.costCenter}
+                      onChange={(e) => setFilters(prev => ({ ...prev, costCenter: e.target.value }))}
+                    />
+                  </div>
+                  <Button 
+                      variant="ghost" 
+                      className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={() => setFilters({
+                          assetNumber: "",
+                          tagNumber: "",
+                          description: "",
+                          costCenter: "",
+                          projectId: "all",
+                          assetClass: "all",
+                          status: "all",
+                      })}
+                  >
+                      Limpar Filtros
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Link href="/asset-movements">
+              <Button variant="outline">
+                <ArrowRightLeft className="mr-2 h-4 w-4" />
+                Movimentações
+              </Button>
+            </Link>
+            <Button variant="outline" onClick={toggleAllClasses}>
+                {Object.keys(groupedAssets).length > 0 && Object.keys(groupedAssets).every(cls => collapsedClasses[cls]) ? (
+                  <>
+                    <ChevronDown className="mr-2 h-4 w-4" /> Expandir Tudo
+                  </>
+                ) : (
+                  <>
+                    <ChevronRight className="mr-2 h-4 w-4" /> Recolher Tudo
+                  </>
+                )}
+            </Button>
             <Button variant="outline" onClick={handleExportExcel}>
                 <Download className="mr-2 h-4 w-4" />
                 Exportar Excel
@@ -520,6 +686,11 @@ export default function AssetsPage() {
                   {expandedSections.details && (
                   (() => {
                     const totalAssetValue = getAssetValue(viewingAsset);
+                    
+                    const assetClassDef = assetClasses?.find(c => c.name === viewingAsset.assetClass);
+                    const effectiveUsefulLife = Number(viewingAsset.usefulLife) || Number(assetClassDef?.usefulLife) || 0;
+                    const effectiveCorporateLife = Number(viewingAsset.corporateUsefulLife) || Number(assetClassDef?.corporateUsefulLife) || 0;
+
                     const calculateDepreciation = (life: any) => {
                       const years = Number(life || 0);
                       if (years <= 0 || !viewingAsset.startDate) return { monthly: 0, accumulated: 0, residual: totalAssetValue, monthsAccumulated: 0, totalMonths: 0 };
@@ -534,8 +705,8 @@ export default function AssetsPage() {
                       const monthsAccumulated = Math.min(months, totalMonths);
                       return { monthly, accumulated, residual, monthsAccumulated, totalMonths };
                     };
-                    const fiscal = calculateDepreciation(viewingAsset.usefulLife);
-                    const corporate = calculateDepreciation(viewingAsset.corporateUsefulLife);
+                    const fiscal = calculateDepreciation(effectiveUsefulLife);
+                    const corporate = calculateDepreciation(effectiveCorporateLife);
                     return (
                   <div className="p-6 grid grid-cols-9 gap-6">
                 <div className="col-span-1 space-y-1">
@@ -568,11 +739,11 @@ export default function AssetsPage() {
                 </div>
                 <div className="col-span-1 space-y-1">
                   <label className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Vida Útil</label>
-                  <p className="text-base">{viewingAsset.usefulLife ? `${viewingAsset.usefulLife} anos` : "-"}</p>
+                  <p className="text-base">{effectiveUsefulLife ? `${effectiveUsefulLife} anos` : "-"}</p>
                 </div>
                 <div className="col-span-1 space-y-1">
                   <label className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Vida Societária</label>
-                  <p className="text-base">{viewingAsset.corporateUsefulLife ? `${viewingAsset.corporateUsefulLife} anos` : "-"}</p>
+                  <p className="text-base">{effectiveCorporateLife ? `${effectiveCorporateLife} anos` : "-"}</p>
                 </div>
                 <div className="col-span-1 space-y-1">
                   <label className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Centro de Custo</label>
@@ -602,9 +773,9 @@ export default function AssetsPage() {
                 {/* Cenário Fiscal */}
                 <div className="mt-2 bg-white p-4 rounded border">
                     <h4 className="font-medium text-base text-gray-900 border-b pb-2 mb-3 flex justify-between items-center">
-                        <span>Cenário Fiscal ({viewingAsset.usefulLife || 0} anos)</span>
+                        <span>Cenário Fiscal ({effectiveUsefulLife} anos)</span>
                         <span className="text-xs text-muted-foreground font-normal">
-                            {(Number(viewingAsset.usefulLife) || 0)} * 12 = {(Number(viewingAsset.usefulLife) || 0) * 12} meses | R$ {totalAssetValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {(Number(viewingAsset.usefulLife) || 0) * 12} = R$ {fiscal.monthly.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {effectiveUsefulLife} * 12 = {effectiveUsefulLife * 12} meses | R$ {totalAssetValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {effectiveUsefulLife * 12} = R$ {fiscal.monthly.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                     </h4>
                     <div className="grid grid-cols-3 gap-4">
@@ -630,9 +801,9 @@ export default function AssetsPage() {
                 {/* Cenário Societário */}
                 <div className="mt-2 bg-white p-4 rounded border">
                     <h4 className="font-medium text-base text-gray-900 border-b pb-2 mb-3 flex justify-between items-center">
-                        <span>Cenário Societário ({viewingAsset.corporateUsefulLife || 0} anos)</span>
+                        <span>Cenário Societário ({effectiveCorporateLife} anos)</span>
                         <span className="text-xs text-muted-foreground font-normal">
-                            {(Number(viewingAsset.corporateUsefulLife) || 0)} * 12 = {(Number(viewingAsset.corporateUsefulLife) || 0) * 12} meses | R$ {totalAssetValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {(Number(viewingAsset.corporateUsefulLife) || 0) * 12} = R$ {corporate.monthly.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {effectiveCorporateLife} * 12 = {effectiveCorporateLife * 12} meses | R$ {totalAssetValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {effectiveCorporateLife * 12} = R$ {corporate.monthly.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                     </h4>
                     <div className="grid grid-cols-3 gap-4">
@@ -752,8 +923,10 @@ export default function AssetsPage() {
                   <div className="p-6">
                     {(() => {
                       const totalValue = getAssetValue(viewingAsset);
-                      const fiscalLife = Number(viewingAsset.usefulLife || 0);
-                      const corporateLife = Number(viewingAsset.corporateUsefulLife || 0);
+                      const assetClassDef = assetClasses?.find(c => c.name === viewingAsset.assetClass);
+                      const fiscalLife = Number(viewingAsset.usefulLife) || Number(assetClassDef?.usefulLife) || 0;
+                      const corporateLife = Number(viewingAsset.corporateUsefulLife) || Number(assetClassDef?.corporateUsefulLife) || 0;
+
                       const startDate = viewingAsset.startDate ? new Date(viewingAsset.startDate) : null;
                       const currentYear = new Date().getFullYear();
                       
@@ -793,12 +966,21 @@ export default function AssetsPage() {
                             if (accumulatedDepreciation > totalValue) {
                                 accumulatedDepreciation = totalValue;
                             }
+
+                            let isDepreciated = false;
+                            if (viewingAsset.lastDepreciationDate) {
+                                const lastRun = new Date(viewingAsset.lastDepreciationDate);
+                                const rowYearMonth = currentYear * 12 + i;
+                                const lastRunYearMonth = lastRun.getFullYear() * 12 + lastRun.getMonth();
+                                if (rowYearMonth <= lastRunYearMonth) isDepreciated = true;
+                            }
                             
                             return {
                               month: monthDate.toLocaleString('pt-BR', { month: 'long' }),
                               initial: initialBalance,
                               monthly: monthlyVal,
-                              final: accumulatedDepreciation
+                              final: accumulatedDepreciation,
+                              isDepreciated
                             };
                           })
                         };
@@ -835,7 +1017,7 @@ export default function AssetsPage() {
                                 </TableHeader>
                                 <TableBody>
                                   {data.rows.map((row: any, index: number) => (
-                                    <TableRow key={index}>
+                                    <TableRow key={index} className={row.isDepreciated ? "bg-green-200 font-bold mb-6 hover:bg-green-300" : ""}>
                                       <TableCell className="capitalize text-sm">{row.month}</TableCell>
                                       <TableCell className="text-right text-sm">R$ {row.initial.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                       <TableCell className="text-right text-sm">R$ {row.monthly.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
@@ -1064,57 +1246,6 @@ export default function AssetsPage() {
       </div>
 
       <div className="space-y-4 mt-4">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div>
-                <label className="text-sm font-medium mb-1 block">Obra</label>
-                <Select value={filters.projectId} onValueChange={(v) => setFilters(prev => ({ ...prev, projectId: v }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Todas as obras" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas as Obras</SelectItem>
-                    {projects?.map((p) => (
-                      <SelectItem key={p.id} value={p.id.toString()}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">Número do Ativo</label>
-                <Input 
-                  placeholder="Filtrar..." 
-                  value={filters.assetNumber}
-                  onChange={(e) => setFilters(prev => ({ ...prev, assetNumber: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">Nº Plaqueta</label>
-                <Input 
-                  placeholder="Filtrar..." 
-                  value={filters.tagNumber}
-                  onChange={(e) => setFilters(prev => ({ ...prev, tagNumber: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">Descrição</label>
-                <Input 
-                  placeholder="Filtrar..." 
-                  value={filters.description}
-                  onChange={(e) => setFilters(prev => ({ ...prev, description: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">Centro de Custo</label>
-                <Input 
-                  placeholder="Filtrar..." 
-                  value={filters.costCenter}
-                  onChange={(e) => setFilters(prev => ({ ...prev, costCenter: e.target.value }))}
-                />
-              </div>
-            </div>
-
             {isLoading ? (
               <div className="flex items-center justify-center h-96">
                 <Loader2 className="animate-spin" />
@@ -1128,7 +1259,6 @@ export default function AssetsPage() {
                       <TableHead>Nº Plaqueta</TableHead>
                       <TableHead>Obra</TableHead>
                       <TableHead>Nome</TableHead>
-                      <TableHead>Classe</TableHead>
                       <TableHead className="text-right">Total Acumulado (Composição)</TableHead>
                       <TableHead>Data Início</TableHead>
                       <TableHead>Status</TableHead>
@@ -1136,7 +1266,24 @@ export default function AssetsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredAssets.map((asset) => (
+                    {Object.entries(groupedAssets).map(([className, groupAssets]) => {
+                      const groupTotal = groupAssets.reduce((acc, asset) => acc + getAssetValue(asset), 0);
+                      return (
+                      <React.Fragment key={className}>
+                        <TableRow className="bg-slate-100 hover:bg-slate-200 cursor-pointer" onClick={() => toggleClass(className)}>
+                            <TableCell colSpan={4} className="font-semibold py-2">
+                                <div className="flex items-center gap-2">
+                                    {collapsedClasses[className] ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                                    <span>{className}</span>
+                                    <span className="text-xs font-normal text-muted-foreground ml-2">({groupAssets.length} ativos)</span>
+                                </div>
+                            </TableCell>
+                            <TableCell className="text-right font-bold text-xs py-2">
+                                R$ {groupTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell colSpan={3} className="py-2"></TableCell>
+                        </TableRow>
+                        {!collapsedClasses[className] && groupAssets.map((asset) => (
                       <TableRow 
                         key={asset.id} 
                         className="cursor-pointer hover:bg-slate-50"
@@ -1157,7 +1304,6 @@ export default function AssetsPage() {
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className="text-xs">{(asset as any).assetClass || "-"}</TableCell>
                         <TableCell className="text-xs text-right font-medium">
                           R$ {getAssetValue(asset).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
@@ -1205,10 +1351,13 @@ export default function AssetsPage() {
                         </TableCell>
                       </TableRow>
                     ))}
+                      </React.Fragment>
+                    );
+                    })}
                   </TableBody>
                   <tfoot className="bg-slate-50 font-bold">
                     <TableRow>
-                      <TableCell colSpan={5} className="text-right">Total Acumulado</TableCell>
+                      <TableCell colSpan={4} className="text-right">Total Acumulado</TableCell>
                       <TableCell className="text-xs text-right">
                         R$ {totalAssetsValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
