@@ -109,9 +109,6 @@ export default function ReportsPage() {
     return () => unsubscribe();
   }, []);
 
-  const { data: assets } = trpc.assets.list.useQuery();
-  const { data: assetClasses } = trpc.accounting.listAssetClasses.useQuery();
-  const updateAssetMutation = trpc.assets.update.useMutation();
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "assets"), (snapshot) => {
       setAssets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -157,11 +154,8 @@ export default function ReportsPage() {
       // Atualiza os ativos com os novos centros de custo
       for (const result of schedule.results) {
         if (result.verified && result.newCostCenter) {
-          await updateAssetMutation.mutateAsync({
-            id: result.assetId,
           await updateDoc(doc(db, "assets", result.assetId), {
             costCenter: result.newCostCenter
-          } as any);
           });
         }
       }
