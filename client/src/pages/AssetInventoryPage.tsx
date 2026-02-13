@@ -721,9 +721,9 @@ export default function AssetInventoryPage() {
               {pendingApprovalSchedules.map(schedule => (
                 <div key={schedule.id} className="flex items-center justify-between bg-white p-3 rounded-md border border-blue-100 shadow-sm">
                   <div>
-                    <p className="text-sm font-medium text-slate-700">Realizado em: {new Date(schedule.date).toLocaleDateString('pt-BR')}</p>
-                    <p className="text-xs text-slate-500">{schedule.results?.length || 0} ativos verificados</p>
-                    {schedule.notes && <p className="text-xs text-slate-500 italic mt-1">"{schedule.notes}"</p>}
+                    <p className="text-base font-medium text-slate-700">Realizado em: {new Date(schedule.date).toLocaleDateString('pt-BR')}</p>
+                    <p className="text-sm text-slate-500">{schedule.results?.length || 0} ativos verificados</p>
+                    {schedule.notes && <p className="text-sm text-slate-500 italic mt-1">"{schedule.notes}"</p>}
                   </div>
                   <Button 
                     size="sm" 
@@ -753,9 +753,9 @@ export default function AssetInventoryPage() {
               {myPendingSchedules.map(schedule => (
                 <div key={schedule.id} className="flex items-center justify-between bg-white p-3 rounded-md border border-orange-100 shadow-sm">
                   <div>
-                    <p className="text-sm font-medium text-slate-700">Agendado para: {new Date(schedule.date).toLocaleDateString('pt-BR')}</p>
-                    <p className="text-xs text-slate-500">{schedule.assetIds.length} ativos para conferir</p>
-                    {schedule.notes && <p className="text-xs text-slate-500 italic mt-1">"{schedule.notes}"</p>}
+                    <p className="text-base font-medium text-slate-700">Agendado para: {new Date(schedule.date).toLocaleDateString('pt-BR')}</p>
+                    <p className="text-sm text-slate-500">{schedule.assetIds.length} ativos para conferir</p>
+                    {schedule.notes && <p className="text-sm text-slate-500 italic mt-1">"{schedule.notes}"</p>}
                   </div>
                   <Button 
                     size="sm" 
@@ -807,7 +807,7 @@ export default function AssetInventoryPage() {
               <Loader2 className="h-8 w-8 animate-spin" />
             </div>
           ) : (
-            <Table>
+            <Table className="text-base">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px]">
@@ -816,14 +816,14 @@ export default function AssetInventoryPage() {
                       onCheckedChange={toggleAllAssets}
                     />
                   </TableHead>
-                  <TableHead>Nº Ativo</TableHead>
-                  <TableHead>Plaqueta</TableHead>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Centro de Custo</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Responsável</TableHead>
-                  <TableHead className="text-right">Valor</TableHead>
-                  <TableHead className="text-center">Ações</TableHead>
+                  <TableHead className="text-base">Nº Ativo</TableHead>
+                  <TableHead className="text-base">Plaqueta</TableHead>
+                  <TableHead className="text-base">Nome</TableHead>
+                  <TableHead className="text-base">Centro de Custo</TableHead>
+                  <TableHead className="text-base">Status</TableHead>
+                  <TableHead className="text-base">Responsável</TableHead>
+                  <TableHead className="text-right text-base">Valor</TableHead>
+                  <TableHead className="text-center text-base">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -850,13 +850,13 @@ export default function AssetInventoryPage() {
                         disabled={!!activeSchedule}
                       />
                     </TableCell>
-                    <TableCell className="font-mono">{asset.assetNumber || "-"}</TableCell>
-                    <TableCell>{asset.tagNumber || "-"}</TableCell>
+                    <TableCell className="font-mono text-base">{asset.assetNumber || "-"}</TableCell>
+                    <TableCell className="text-base">{asset.tagNumber || "-"}</TableCell>
                     <TableCell>
-                      <div className="font-medium">{asset.name}</div>
-                      <div className="text-xs text-muted-foreground truncate max-w-[300px]">{asset.description}</div>
+                      <div className="font-medium text-base">{asset.name}</div>
+                      <div className="text-sm text-muted-foreground truncate max-w-[300px]">{asset.description}</div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-base">
                       {(() => {
                          const ccCode = typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter;
                          const cc = costCenters.find(c => c.code === ccCode);
@@ -864,7 +864,7 @@ export default function AssetInventoryPage() {
                       })()}
                     </TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium capitalize
                         ${asset.status === 'concluido' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
                         {asset.status?.replace('_', ' ')}
                       </span>
@@ -875,20 +875,20 @@ export default function AssetInventoryPage() {
                           {activeSchedule.userIds.map(uid => {
                             const responsibleUser = users.find(u => String(u.id) === String(uid));
                             return (
-                              <span key={uid} className="text-[13px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 w-fit whitespace-nowrap">
+                              <span key={uid} className="text-sm text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 w-fit whitespace-nowrap">
                                 {responsibleUser?.name || "Usuário..."}
                               </span>
                             );
                           })}
-                          <span className="text-[13px] text-muted-foreground mt-0.5">
+                          <span className="text-sm text-muted-foreground mt-0.5">
                             {new Date(activeSchedule.date).toLocaleDateString('pt-BR')}
                           </span>
                         </div>
                       ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
+                        <span className="text-sm text-muted-foreground">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right text-base">
                       {asset.value ? Number(asset.value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : "-"}
                     </TableCell>
                     <TableCell className="text-center">
@@ -925,7 +925,7 @@ export default function AssetInventoryPage() {
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-2xl">
               <ClipboardList className="h-5 w-5" />
               Histórico de Inventários Concluídos
             </CardTitle>
@@ -936,32 +936,32 @@ export default function AssetInventoryPage() {
         </CardHeader>
         {isHistoryExpanded && (
         <CardContent>
-          <Table>
+          <Table className="text-lg">
             <TableHeader>
               <TableRow>
-                <TableHead>Data</TableHead>
-                <TableHead>Responsáveis</TableHead>
-                <TableHead>Aprovado Por</TableHead>
-                <TableHead>Data Aprovação</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                <TableHead className="text-lg">Data</TableHead>
+                <TableHead className="text-lg">Responsáveis</TableHead>
+                <TableHead className="text-lg">Aprovado Por</TableHead>
+                <TableHead className="text-lg">Data Aprovação</TableHead>
+                <TableHead className="text-right text-lg">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {completedSchedules.map(schedule => (
                 <TableRow key={schedule.id}>
-                  <TableCell>{new Date(schedule.date).toLocaleDateString('pt-BR')}</TableCell>
+                  <TableCell className="text-lg">{new Date(schedule.date).toLocaleDateString('pt-BR')}</TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1">
                       {schedule.userIds.map(uid => {
                         const u = users.find(user => String(user.id) === String(uid));
-                        return <span key={uid} className="text-xs text-muted-foreground">{u?.name || "Usuário"}</span>
+                        return <span key={uid} className="text-base text-muted-foreground">{u?.name || "Usuário"}</span>
                       })}
                     </div>
                   </TableCell>
-                  <TableCell>{schedule.approvedBy || "-"}</TableCell>
-                  <TableCell>{schedule.approvedAt ? new Date(schedule.approvedAt).toLocaleString('pt-BR') : "-"}</TableCell>
+                  <TableCell className="text-lg">{schedule.approvedBy || "-"}</TableCell>
+                  <TableCell className="text-lg">{schedule.approvedAt ? new Date(schedule.approvedAt).toLocaleString('pt-BR') : "-"}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => handleExportScheduleResult(schedule)}>
+                    <Button variant="outline" className="h-9 text-base px-4" onClick={() => handleExportScheduleResult(schedule)}>
                       <Download className="w-4 h-4 mr-2" />
                       Relatório
                     </Button>
@@ -970,7 +970,7 @@ export default function AssetInventoryPage() {
               ))}
               {completedSchedules.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground text-lg">
                     Nenhum inventário concluído.
                   </TableCell>
                 </TableRow>
@@ -1042,13 +1042,13 @@ export default function AssetInventoryPage() {
              </div>
 
              <div className="flex-1 overflow-auto bg-white md:border md:rounded-md md:mt-4">
-             <Table>
+             <Table className="text-base">
                <TableHeader>
                  <TableRow>
-                   <TableHead className="w-[60px] text-center bg-slate-50 sticky top-0 z-10">Status</TableHead>
-                   <TableHead className="bg-slate-50 sticky top-0 z-10">Ativo</TableHead>
-                   <TableHead className="bg-slate-50 sticky top-0 z-10">Localização</TableHead>
-                   <TableHead className="bg-slate-50 sticky top-0 z-10 min-w-[150px]">Obs</TableHead>
+                   <TableHead className="w-[60px] text-center bg-slate-50 sticky top-0 z-10 text-base">Status</TableHead>
+                   <TableHead className="bg-slate-50 sticky top-0 z-10 text-base">Ativo</TableHead>
+                   <TableHead className="bg-slate-50 sticky top-0 z-10 text-base">Localização</TableHead>
+                   <TableHead className="bg-slate-50 sticky top-0 z-10 min-w-[150px] text-base">Obs</TableHead>
                  </TableRow>
                </TableHeader>
                <TableBody>
@@ -1074,14 +1074,14 @@ export default function AssetInventoryPage() {
                      </TableCell>
                      <TableCell className="p-2 align-middle">
                         <div className="flex flex-col">
-                            <span className="font-bold text-sm">{asset.tagNumber}</span>
-                            <span className="text-xs text-muted-foreground line-clamp-2 leading-tight">{asset.name}</span>
-                            <span className="text-[10px] font-mono text-slate-400 mt-0.5">{asset.assetNumber}</span>
+                            <span className="font-bold text-base">{asset.tagNumber}</span>
+                            <span className="text-sm text-muted-foreground line-clamp-2 leading-tight">{asset.name}</span>
+                            <span className="text-xs font-mono text-slate-400 mt-0.5">{asset.assetNumber}</span>
                         </div>
                      </TableCell>
                      <TableCell className="p-2 align-middle">
                         <div className="flex flex-col gap-1">
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-sm text-muted-foreground">
                                 {typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter || "-"}
                             </span>
                         <Select 
@@ -1091,7 +1091,7 @@ export default function AssetInventoryPage() {
                             [asset.id]: { ...prev[asset.id], costCenter: val }
                           }))}
                         >
-                              <SelectTrigger className="h-8 text-xs w-full bg-white border-slate-200">
+                              <SelectTrigger className="h-8 text-sm w-full bg-white border-slate-200">
                                 <SelectValue placeholder="Mover..." />
                           </SelectTrigger>
                           <SelectContent>
@@ -1112,7 +1112,7 @@ export default function AssetInventoryPage() {
                             [asset.id]: { ...prev[asset.id], observations: e.target.value }
                           }))}
                           placeholder="Obs..."
-                        className="text-xs min-h-[60px] bg-white resize-none"
+                        className="text-sm min-h-[60px] bg-white resize-none"
                         />
                      </TableCell>
                    </TableRow>
@@ -1184,7 +1184,7 @@ export default function AssetInventoryPage() {
           </DialogHeader>
           
           <div className="flex-1 overflow-y-auto py-4">
-             <Table>
+             <Table className="text-base">
                <TableHeader>
                  <TableRow>
                    <TableHead className="w-[50px] text-center">
@@ -1196,11 +1196,11 @@ export default function AssetInventoryPage() {
                         }}
                       />
                    </TableHead>
-                   <TableHead>Ativo</TableHead>
-                   <TableHead className="text-center">Verificado</TableHead>
-                   <TableHead>Centro de Custo (Atual)</TableHead>
-                   <TableHead>Centro de Custo (Novo)</TableHead>
-                   <TableHead>Observações</TableHead>
+                   <TableHead className="text-base">Ativo</TableHead>
+                   <TableHead className="text-center text-base">Verificado</TableHead>
+                   <TableHead className="text-base">Centro de Custo (Atual)</TableHead>
+                   <TableHead className="text-base">Centro de Custo (Novo)</TableHead>
+                   <TableHead className="text-base">Observações</TableHead>
                  </TableRow>
                </TableHeader>
                <TableBody>
@@ -1222,23 +1222,23 @@ export default function AssetInventoryPage() {
                           />
                        </TableCell>
                        <TableCell>
-                          <div className="font-medium">{asset?.name || "Ativo não encontrado"}</div>
-                          <div className="text-xs text-muted-foreground">{asset?.assetNumber}</div>
+                          <div className="font-medium text-base">{asset?.name || "Ativo não encontrado"}</div>
+                          <div className="text-sm text-muted-foreground">{asset?.assetNumber}</div>
                        </TableCell>
                        <TableCell className="text-center">
                           {result.verified ? <CheckCircle2 className="w-5 h-5 text-green-600 mx-auto" /> : <XCircle className="w-5 h-5 text-red-600 mx-auto" />}
                        </TableCell>
-                       <TableCell>{currentCC}</TableCell>
+                       <TableCell className="text-base">{currentCC}</TableCell>
                        <TableCell>
                           {result.newCostCenter ? (
-                              <span className={isChange ? "font-bold text-orange-700" : ""}>
+                              <span className={`text-base ${isChange ? "font-bold text-orange-700" : ""}`}>
                                   {newCCLabel}
                               </span>
                           ) : (
-                              <span className="text-muted-foreground italic">Mantido</span>
+                              <span className="text-muted-foreground italic text-base">Mantido</span>
                           )}
                        </TableCell>
-                       <TableCell className="text-xs text-muted-foreground">
+                       <TableCell className="text-sm text-muted-foreground">
                           {result.observations || "-"}
                        </TableCell>
                      </TableRow>

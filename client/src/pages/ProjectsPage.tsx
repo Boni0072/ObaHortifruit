@@ -462,10 +462,7 @@ export default function ProjectsPage() {
                       const isCompletedStep = index <= currentStepIndex;
                       const isCurrent = index === currentStepIndex;
                       
-                      const nextStep = steps[index + 1];
-                      const approvalInfo = nextStep 
-                        ? viewProject.approvalHistory?.slice().reverse().find((h: any) => h.status === nextStep.id)
-                        : null;
+                      const approvalInfo = viewProject.approvalHistory?.slice().reverse().find((h: any) => h.status === step.id);
 
                       return (
                         <div key={step.id} className="flex flex-col items-center group relative">

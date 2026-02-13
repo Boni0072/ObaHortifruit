@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { useLocation, Link } from "wouter";
 
 export default function AssetsPage() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const utils = trpc.useUtils();
   const [projects, setProjects] = useState<any[]>([]);
 
@@ -59,6 +61,16 @@ export default function AssetsPage() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Sync viewingAsset with real-time assets data to reflect depreciation updates
+  useEffect(() => {
+    if (viewOpen && viewingAsset) {
+      const currentAsset = assets.find(a => a.id === viewingAsset.id);
+      if (currentAsset && JSON.stringify(currentAsset) !== JSON.stringify(viewingAsset)) {
+        setViewingAsset(currentAsset);
+      }
+    }
+  }, [assets, viewOpen, viewingAsset]);
 
   const { data: projectExpenses, refetch: refetchExpenses } = trpc.expenses.listByProject.useQuery(
     { projectId: filters.projectId === "all" ? "all" : filters.projectId }
@@ -223,9 +235,26 @@ export default function AssetsPage() {
     }
 
     try {
-      await updateDoc(doc(db, "assets", asset.id), {
-        status: newStatus as "planejamento" | "em_desenvolvimento" | "concluido" | "parado",
+      const updateData: any = {
+        status: newStatus,
+      };
+      if (newStatus === 'baixado') {
+        updateData.writeOffDate = new Date().toISOString();
+      }
+      await updateDoc(doc(db, "assets", asset.id), updateData);
+
+      // Registro de Histórico de Status
+      await addDoc(collection(db, "asset_status_history"), {
+        assetId: asset.id,
+        assetName: asset.name,
+        assetNumber: asset.assetNumber || "N/A",
+        oldStatus: asset.status,
+        newStatus: newStatus,
+        changedBy: user?.name || "Sistema",
+        changedAt: new Date().toISOString(),
+        projectId: asset.projectId || null
       });
+
       toast.success("Status atualizado!");
     } catch (error) {
       toast.error("Erro ao atualizar status");
@@ -242,6 +271,20 @@ export default function AssetsPage() {
         availabilityDate: new Date(activationData.availabilityDate).toISOString(),
         residualValue: activationData.residualValue,
       });
+
+      // Registro de Histórico de Ativação
+      await addDoc(collection(db, "asset_status_history"), {
+        assetId: assetToActivate.id,
+        assetName: assetToActivate.name,
+        assetNumber: assetToActivate.assetNumber || "N/A",
+        oldStatus: assetToActivate.status,
+        newStatus: "concluido",
+        changedBy: user?.name || "Sistema",
+        changedAt: new Date().toISOString(),
+        projectId: assetToActivate.projectId || null,
+        notes: "Ativação de Imobilizado (CPC 27)"
+      });
+
       toast.success("Ativo ativado e transferido para o Imobilizado Definitivo!");
       setActivationOpen(false);
       setAssetToActivate(null);
@@ -406,7 +449,12 @@ export default function AssetsPage() {
     if (!filteredAssets) return {};
     const groups: Record<string, any[]> = {};
     filteredAssets.forEach(asset => {
-      const cls = asset.assetClass || "Sem Classe";
+      let cls = asset.assetClass || "Sem Classe";
+
+      if (asset.status === 'planejamento' || asset.status === 'em_desenvolvimento') {
+        cls = "Imobilizado em andamento";
+      }
+
       if (!groups[cls]) groups[cls] = [];
       groups[cls].push(asset);
     });
@@ -451,6 +499,11 @@ export default function AssetsPage() {
       const cc = costCenters?.find((c: any) => c.code === ccCode);
       const ccDisplay = cc ? `${cc.code} - ${cc.name}` : (ccCode || "");
 
+      let effectiveClass = asset.assetClass || "";
+      if (asset.status === 'planejamento' || asset.status === 'em_desenvolvimento') {
+        effectiveClass = "Imobilizado em andamento";
+      }
+
       return {
         "Número do Ativo": asset.assetNumber || "",
         "Plaqueta": asset.tagNumber || "",
@@ -462,7 +515,7 @@ export default function AssetsPage() {
         "Status": asset.status ? asset.status.replace('_', ' ') : "",
         "Obra": project?.name || "",
         "Centro de Custo": ccDisplay,
-        "Classe do Ativo": asset.assetClass || "",
+        "Classe do Ativo": effectiveClass,
         "Vida Útil (Fiscal)": asset.usefulLife || "",
         "Vida Útil (Societária)": asset.corporateUsefulLife || "",
         "Conta Contábil": asset.accountingAccount || "",
@@ -486,7 +539,7 @@ export default function AssetsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-slate-700">Ativo em andamento</h1>
+        <h1 className="text-3xl font-bold text-slate-700">Imobilizado</h1>
         
         <div className="flex gap-2">
             <Popover>
@@ -543,6 +596,7 @@ export default function AssetsPage() {
                         <SelectItem value="em_desenvolvimento">Em Desenvolvimento</SelectItem>
                         <SelectItem value="concluido">Concluído</SelectItem>
                         <SelectItem value="parado">Parado</SelectItem>
+                        <SelectItem value="baixado">Baixado</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -686,27 +740,39 @@ export default function AssetsPage() {
                   {expandedSections.details && (
                   (() => {
                     const totalAssetValue = getAssetValue(viewingAsset);
+                    const normalize = (str: string) => str?.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
                     
-                    const assetClassDef = assetClasses?.find(c => c.name === viewingAsset.assetClass);
+                    const assetClassDef = assetClasses?.find(c => normalize(c.name) === normalize(viewingAsset.assetClass));
                     const effectiveUsefulLife = Number(viewingAsset.usefulLife) || Number(assetClassDef?.usefulLife) || 0;
                     const effectiveCorporateLife = Number(viewingAsset.corporateUsefulLife) || Number(assetClassDef?.corporateUsefulLife) || 0;
 
-                    const calculateDepreciation = (life: any) => {
+                    const calculateDepreciation = (life: any, useStored = false) => {
                       const years = Number(life || 0);
                       if (years <= 0 || !viewingAsset.startDate) return { monthly: 0, accumulated: 0, residual: totalAssetValue, monthsAccumulated: 0, totalMonths: 0 };
-                      const start = new Date(viewingAsset.startDate);
-                      const now = new Date();
-                      let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
-                      if (months < 0) months = 0;
                       const totalMonths = years * 12;
                       const monthly = totalAssetValue / totalMonths;
-                      const accumulated = Math.min(months * monthly, totalAssetValue);
+                      
+                      let accumulated = 0;
+                      let monthsAccumulated = 0;
+
+                      if (useStored && viewingAsset.accumulatedDepreciation !== undefined && viewingAsset.accumulatedDepreciation !== null) {
+                          accumulated = Number(viewingAsset.accumulatedDepreciation);
+                          monthsAccumulated = monthly > 0 ? Math.round(accumulated / monthly) : 0;
+                      } else {
+                          const assetDate = new Date(viewingAsset.startDate);
+                          const start = new Date(assetDate.getFullYear(), assetDate.getMonth() + 1, 1);
+                          const now = new Date();
+                          let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+                          if (months < 0) months = 0;
+                          accumulated = Math.min(months * monthly, totalAssetValue);
+                          monthsAccumulated = Math.min(months, totalMonths);
+                      }
+
                       const residual = totalAssetValue - accumulated;
-                      const monthsAccumulated = Math.min(months, totalMonths);
                       return { monthly, accumulated, residual, monthsAccumulated, totalMonths };
                     };
-                    const fiscal = calculateDepreciation(effectiveUsefulLife);
-                    const corporate = calculateDepreciation(effectiveCorporateLife);
+                    const fiscal = calculateDepreciation(effectiveUsefulLife, true);
+                    const corporate = calculateDepreciation(effectiveCorporateLife, false);
                     return (
                   <div className="p-6 grid grid-cols-9 gap-6">
                 <div className="col-span-1 space-y-1">
@@ -731,7 +797,11 @@ export default function AssetsPage() {
                 </div>
                 <div className="col-span-1 space-y-1">
                   <label className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Classe</label>
-                  <p className="text-base">{viewingAsset.assetClass || "-"}</p>
+                  <p className="text-base">
+                    {(viewingAsset.status === 'planejamento' || viewingAsset.status === 'em_desenvolvimento') 
+                      ? "Imobilizado em andamento" 
+                      : (viewingAsset.assetClass || "-")}
+                  </p>
                 </div>
                 <div className="col-span-1 space-y-1">
                   <label className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Conta Contábil</label>
@@ -923,7 +993,8 @@ export default function AssetsPage() {
                   <div className="p-6">
                     {(() => {
                       const totalValue = getAssetValue(viewingAsset);
-                      const assetClassDef = assetClasses?.find(c => c.name === viewingAsset.assetClass);
+                      const normalize = (str: string) => str?.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
+                      const assetClassDef = assetClasses?.find(c => normalize(c.name) === normalize(viewingAsset.assetClass));
                       const fiscalLife = Number(viewingAsset.usefulLife) || Number(assetClassDef?.usefulLife) || 0;
                       const corporateLife = Number(viewingAsset.corporateUsefulLife) || Number(assetClassDef?.corporateUsefulLife) || 0;
 
@@ -939,8 +1010,10 @@ export default function AssetsPage() {
 
                         const monthlyDepreciation = totalValue / (years * 12);
                         let accumulatedDepreciation = 0;
-                        const startYear = startDate.getFullYear();
-                        const startMonth = startDate.getMonth();
+                        
+                        const effectiveStart = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 1);
+                        const startYear = effectiveStart.getFullYear();
+                        const startMonth = effectiveStart.getMonth();
                         
                         const monthsPrior = (currentYear - startYear) * 12 - startMonth;
                         
@@ -1252,17 +1325,17 @@ export default function AssetsPage() {
               </div>
             ) : filteredAssets && filteredAssets.length > 0 ? (
               <div className="border rounded-lg overflow-hidden bg-white">
-                <Table>
+                <Table className="text-base">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Nº Ativo</TableHead>
-                      <TableHead>Nº Plaqueta</TableHead>
-                      <TableHead>Obra</TableHead>
-                      <TableHead>Nome</TableHead>
-                      <TableHead className="text-right">Total Acumulado (Composição)</TableHead>
-                      <TableHead>Data Início</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Ações</TableHead>
+                      <TableHead className="text-base">Nº Ativo</TableHead>
+                      <TableHead className="text-base">Nº Plaqueta</TableHead>
+                      <TableHead className="text-base">Obra</TableHead>
+                      <TableHead className="text-base">Nome</TableHead>
+                      <TableHead className="text-right text-base">Total Acumulado (Composição)</TableHead>
+                      <TableHead className="text-base">Data Início</TableHead>
+                      <TableHead className="text-base">Status</TableHead>
+                      <TableHead className="text-right text-base">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1271,14 +1344,14 @@ export default function AssetsPage() {
                       return (
                       <React.Fragment key={className}>
                         <TableRow className="bg-slate-100 hover:bg-slate-200 cursor-pointer" onClick={() => toggleClass(className)}>
-                            <TableCell colSpan={4} className="font-semibold py-2">
+                            <TableCell colSpan={4} className="font-semibold py-2 text-base">
                                 <div className="flex items-center gap-2">
                                     {collapsedClasses[className] ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
                                     <span>{className}</span>
-                                    <span className="text-xs font-normal text-muted-foreground ml-2">({groupAssets.length} ativos)</span>
+                                    <span className="text-sm font-normal text-muted-foreground ml-2">({groupAssets.length} ativos)</span>
                                 </div>
                             </TableCell>
-                            <TableCell className="text-right font-bold text-xs py-2">
+                            <TableCell className="text-right font-bold text-base py-2">
                                 R$ {groupTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </TableCell>
                             <TableCell colSpan={3} className="py-2"></TableCell>
@@ -1289,30 +1362,30 @@ export default function AssetsPage() {
                         className="cursor-pointer hover:bg-slate-50"
                         onClick={() => handleView(asset)}
                       >
-                        <TableCell className="font-mono text-xs">{(asset as any).assetNumber || "-"}</TableCell>
-                        <TableCell className="text-xs">{(asset as any).tagNumber || "-"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="font-mono text-base">{(asset as any).assetNumber || "-"}</TableCell>
+                        <TableCell className="text-base">{(asset as any).tagNumber || "-"}</TableCell>
+                        <TableCell className="text-base text-muted-foreground">
                           {projects?.find(p => String(p.id) === String((asset as any).projectId))?.name || "—"}
                         </TableCell>
                         <TableCell>
-                          <div className="font-medium">{asset.name}</div>
-                          <div className="text-xs text-muted-foreground">{asset.description}</div>
+                          <div className="font-medium text-base">{asset.name}</div>
+                          <div className="text-sm text-muted-foreground">{asset.description}</div>
                           {(asset as any).hasImpairment && (
-                            <div className="flex items-center gap-1 text-xs text-red-600 mt-1">
-                              <AlertTriangle size={12} />
+                            <div className="flex items-center gap-1 text-sm text-red-600 mt-1">
+                              <AlertTriangle size={14} />
                               <span>Impairment</span>
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className="text-xs text-right font-medium">
+                        <TableCell className="text-base text-right font-medium">
                           R$ {getAssetValue(asset).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
-                        <TableCell className="text-xs">
+                        <TableCell className="text-base">
                           {asset.startDate ? new Date(asset.startDate).toLocaleDateString("pt-BR") : "-"}
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <Select value={asset.status} onValueChange={(v) => handleStatusChange(asset, v)}>
-                            <SelectTrigger className="w-[140px] h-8 text-xs">
+                            <SelectTrigger className="w-[140px] h-9 text-sm">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -1320,6 +1393,7 @@ export default function AssetsPage() {
                               <SelectItem value="em_desenvolvimento">Em Desenv.</SelectItem>
                               <SelectItem value="concluido">Concluído</SelectItem>
                               <SelectItem value="parado">Parado</SelectItem>
+                              <SelectItem value="baixado">Baixado</SelectItem>
                             </SelectContent>
                           </Select>
                         </TableCell>
@@ -1357,8 +1431,8 @@ export default function AssetsPage() {
                   </TableBody>
                   <tfoot className="bg-slate-50 font-bold">
                     <TableRow>
-                      <TableCell colSpan={4} className="text-right">Total Acumulado</TableCell>
-                      <TableCell className="text-xs text-right">
+                      <TableCell colSpan={4} className="text-right text-base">Total Acumulado</TableCell>
+                      <TableCell className="text-base text-right">
                         R$ {totalAssetsValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell colSpan={3}></TableCell>

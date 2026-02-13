@@ -112,6 +112,8 @@ export default function Dashboard() {
   // Asset Classes Metrics (Calculated)
   const assetClassesData = useMemo(() => {
     if (!assets || !expenses || !assetClasses) return [];
+    
+    const normalize = (str: string) => str?.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
 
     const classMap: Record<string, { cost: number; depreciation: number; residual: number; count: number }> = {};
 
@@ -123,18 +125,18 @@ export default function Dashboard() {
       // Calculate Depreciation dynamically based on Last Run Date to match Depreciation Page
       let depreciation = Number(asset.accumulatedDepreciation || 0);
       
-      const assetClassDef = assetClasses.find(c => c.name === asset.assetClass);
+      const assetClassDef = assetClasses.find(c => normalize(c.name) === normalize(asset.assetClass));
       const usefulLifeYears = depreciationType === 'corporate' 
         ? (Number(asset.corporateUsefulLife) || Number(assetClassDef?.corporateUsefulLife) || 0)
         : (Number(asset.usefulLife) || Number(assetClassDef?.usefulLife) || 0);
       const lastDepreciationDateStr = asset.lastDepreciationDate;
-      const dateToUse = asset.availabilityDate || asset.startDate;
+      const dateToUse = asset.startDate;
 
       if (usefulLifeYears > 0 && dateToUse && asset.depreciationStatus !== 'paused' && lastDepreciationDateStr) {
           const depStart = getLocalDateFromISO(dateToUse);
           depStart.setMonth(depStart.getMonth() + 1, 1); // Standard rule: next month
           
-          const lastRunDate = new Date(lastDepreciationDateStr);
+          const lastRunDate = getLocalDateFromISO(lastDepreciationDateStr);
           const depStartMonth = depStart.getFullYear() * 12 + depStart.getMonth();
           const lastRunMonth = lastRunDate.getFullYear() * 12 + lastRunDate.getMonth();
           const assetEndMonth = depStartMonth + (usefulLifeYears * 12) - 1;
@@ -151,7 +153,11 @@ export default function Dashboard() {
       }
 
       const residual = cost - depreciation;
-      const className = asset.assetClass || "Não Classificado";
+      let className = asset.assetClass || "Não Classificado";
+
+      if (asset.status === 'planejamento' || asset.status === 'em_desenvolvimento') {
+        className = "Imobilizado em andamento";
+      }
 
       if (!classMap[className]) {
         classMap[className] = { cost: 0, depreciation: 0, residual: 0, count: 0 };
@@ -195,18 +201,20 @@ export default function Dashboard() {
       const monthEnd = new Date(currentYear, monthIndex + 1, 0);
       
       let total = 0;
+      
+      const normalize = (str: string) => str?.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
 
       assets.forEach((asset: any) => {
         const assetExpenses = expenses.filter(e => String(e.assetId) === String(asset.id));
         const cost = assetExpenses.reduce((acc, curr) => acc + Number(curr.amount), Number(asset.value || 0));
         
-        const assetClassDef = assetClasses.find(c => c.name === asset.assetClass);
+        const assetClassDef = assetClasses.find(c => normalize(c.name) === normalize(asset.assetClass));
         const usefulLifeYears = depreciationType === 'corporate' 
             ? (Number(asset.corporateUsefulLife) || Number(assetClassDef?.corporateUsefulLife) || 0)
             : (Number(asset.usefulLife) || Number(assetClassDef?.usefulLife) || 0);
         
         const lastDepreciationDateStr = asset.lastDepreciationDate;
-        const dateToUse = asset.availabilityDate || asset.startDate;
+        const dateToUse = asset.startDate;
 
         if (usefulLifeYears > 0 && dateToUse && asset.depreciationStatus !== 'paused') {
           const assetStart = getLocalDateFromISO(dateToUse);
@@ -218,9 +226,10 @@ export default function Dashboard() {
           // Check if this month is realized (calculated)
           let isRealized = false;
           if (lastDepreciationDateStr) {
-             const lastRunDate = new Date(lastDepreciationDateStr);
-             // If the run date is after or in the current month (checking year/month)
-             if (lastRunDate >= new Date(currentYear, monthIndex, 1)) isRealized = true;
+             const lastRunDate = getLocalDateFromISO(lastDepreciationDateStr);
+             const lastRunStr = `${lastRunDate.getFullYear()}-${String(lastRunDate.getMonth() + 1).padStart(2, '0')}`;
+             const currentMonthStr = `${currentYear}-${String(monthIndex + 1).padStart(2, '0')}`;
+             if (lastRunStr >= currentMonthStr) isRealized = true;
           }
 
           if (isRealized && assetStart <= monthEnd && assetEnd > monthStart) {
@@ -382,16 +391,15 @@ export default function Dashboard() {
     const movementMap: Record<string, { 
       initialCost: number; 
       additions: number; 
+      transfers: number;
+      writeOffs: number;
       initialDepreciation: number; 
       periodDepreciation: number; 
     }> = {};
+    
+    const normalize = (str: string) => str?.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
 
     assets.forEach((asset: any) => {
-      const className = asset.assetClass || "Não Classificado";
-      if (!movementMap[className]) {
-        movementMap[className] = { initialCost: 0, additions: 0, initialDepreciation: 0, periodDepreciation: 0 };
-      }
-
       // Cost Calculation
       const assetExpenses = expenses.filter(e => String(e.assetId) === String(asset.id));
       const totalCost = assetExpenses.reduce((acc, curr) => acc + Number(curr.amount), Number(asset.value || 0));
@@ -400,6 +408,33 @@ export default function Dashboard() {
       const acquisitionDateStr = asset.startDate; 
       const acquisitionDate = new Date(acquisitionDateStr);
       
+      const availabilityDateStr = asset.availabilityDate;
+      const availabilityDate = availabilityDateStr ? getLocalDateFromISO(availabilityDateStr) : null;
+
+      const writeOffDateStr = asset.writeOffDate;
+      const writeOffDate = writeOffDateStr ? getLocalDateFromISO(writeOffDateStr) : null;
+
+      // Determine if it's a transfer this year (CIP -> Class)
+      let isTransfer = false;
+      if (asset.status === 'concluido' && availabilityDate && availabilityDate >= startOfYear && availabilityDate <= now) {
+          isTransfer = true;
+      }
+
+      // Determine if it's a write-off this year
+      let isWriteOff = false;
+      if (asset.status === 'baixado' && writeOffDate && writeOffDate >= startOfYear && writeOffDate <= now) {
+          isWriteOff = true;
+      }
+
+      let className = asset.assetClass || "Não Classificado";
+      if (asset.status === 'planejamento' || asset.status === 'em_desenvolvimento' || isTransfer) {
+        className = "Imobilizado em andamento";
+      }
+
+      if (!movementMap[className]) {
+        movementMap[className] = { initialCost: 0, additions: 0, transfers: 0, writeOffs: 0, initialDepreciation: 0, periodDepreciation: 0 };
+      }
+      
       // Cost Movement
       if (acquisitionDate < startOfYear) {
         movementMap[className].initialCost += totalCost;
@@ -407,14 +442,30 @@ export default function Dashboard() {
         movementMap[className].additions += totalCost;
       }
 
+      // Handle Transfer
+      if (isTransfer) {
+          movementMap[className].transfers -= totalCost;
+          
+          const destClass = asset.assetClass || "Não Classificado";
+          if (!movementMap[destClass]) {
+             movementMap[destClass] = { initialCost: 0, additions: 0, transfers: 0, writeOffs: 0, initialDepreciation: 0, periodDepreciation: 0 };
+          }
+          movementMap[destClass].transfers += totalCost;
+      }
+
+      // Handle Write-Off
+      if (isWriteOff) {
+          movementMap[className].writeOffs += totalCost;
+      }
+
       // Depreciation Calculation
-      const assetClassDef = assetClasses.find(c => c.name === asset.assetClass);
+      const assetClassDef = assetClasses.find(c => normalize(c.name) === normalize(asset.assetClass));
       const usefulLifeYears = depreciationType === 'corporate' 
         ? (Number(asset.corporateUsefulLife) || Number(assetClassDef?.corporateUsefulLife) || 0)
         : (Number(asset.usefulLife) || Number(assetClassDef?.usefulLife) || 0);
       
       let calculatedAccumulated = Number(asset.accumulatedDepreciation || 0);
-      const depreciationStartStr = asset.availabilityDate || asset.startDate;
+      const depreciationStartStr = asset.startDate;
       const lastDepreciationDateStr = asset.lastDepreciationDate;
       
       if (depreciationStartStr) {
@@ -432,7 +483,7 @@ export default function Dashboard() {
 
             // Calculate Period Depreciation based on Last Run Date (Realized)
             if (lastDepreciationDateStr) {
-                const lastRunDate = new Date(lastDepreciationDateStr);
+                const lastRunDate = getLocalDateFromISO(lastDepreciationDateStr);
                 
                 const depStartMonthIndex = depStart.getFullYear() * 12 + depStart.getMonth();
                 const lastRunMonthIndex = lastRunDate.getFullYear() * 12 + lastRunDate.getMonth();
@@ -495,9 +546,9 @@ export default function Dashboard() {
     return Object.entries(movementMap).map(([name, data]) => ({
       name,
       ...data,
-      finalCost: data.initialCost + data.additions,
+      finalCost: data.initialCost + data.additions + data.transfers - data.writeOffs,
       finalDepreciation: data.initialDepreciation + data.periodDepreciation,
-      netValue: (data.initialCost + data.additions) - (data.initialDepreciation + data.periodDepreciation)
+      netValue: (data.initialCost + data.additions + data.transfers - data.writeOffs) - (data.initialDepreciation + data.periodDepreciation)
     })).sort((a, b) => b.finalCost - a.finalCost);
   }, [assets, expenses, assetClasses, depreciationType]);
 
@@ -506,6 +557,8 @@ export default function Dashboard() {
     return assetMovementData.reduce((acc, curr) => ({
       initialCost: acc.initialCost + curr.initialCost,
       additions: acc.additions + curr.additions,
+      transfers: acc.transfers + curr.transfers,
+      writeOffs: acc.writeOffs + curr.writeOffs,
       finalCost: acc.finalCost + curr.finalCost,
       initialDepreciation: acc.initialDepreciation + curr.initialDepreciation,
       periodDepreciation: acc.periodDepreciation + curr.periodDepreciation,
@@ -514,6 +567,8 @@ export default function Dashboard() {
     }), {
       initialCost: 0,
       additions: 0,
+      transfers: 0,
+      writeOffs: 0,
       finalCost: 0,
       initialDepreciation: 0,
       periodDepreciation: 0,
@@ -1039,6 +1094,8 @@ export default function Dashboard() {
                                 <TableHead className="text-base">Classe</TableHead>
                                 <TableHead className="text-right text-base">Saldo Inicial (Custo)</TableHead>
                                 <TableHead className="text-right text-base">Adições</TableHead>
+                                <TableHead className="text-right text-base">Transf.</TableHead>
+                                <TableHead className="text-right text-base">Baixas</TableHead>
                                 <TableHead className="text-right text-base">Saldo Final (Custo)</TableHead>
                                 <TableHead className="text-right text-base">Deprec. Acum. Inicial</TableHead>
                                 <TableHead className="text-right text-base">Deprec. Período</TableHead>
@@ -1052,6 +1109,8 @@ export default function Dashboard() {
                                     <TableCell className="font-medium whitespace-nowrap">{item.name}</TableCell>
                                     <TableCell className="text-right">{formatCurrency(item.initialCost)}</TableCell>
                                     <TableCell className="text-right text-blue-600">+{formatCurrency(item.additions)}</TableCell>
+                                    <TableCell className="text-right text-orange-600">{item.transfers !== 0 ? formatCurrency(item.transfers) : '-'}</TableCell>
+                                    <TableCell className="text-right text-red-600">{item.writeOffs > 0 ? `-${formatCurrency(item.writeOffs)}` : '-'}</TableCell>
                                     <TableCell className="text-right font-medium">{formatCurrency(item.finalCost)}</TableCell>
                                     <TableCell className="text-right text-slate-500">{formatCurrency(item.initialDepreciation)}</TableCell>
                                     <TableCell className="text-right text-red-500">-{formatCurrency(item.periodDepreciation)}</TableCell>
@@ -1061,7 +1120,7 @@ export default function Dashboard() {
                             ))}
                             {assetMovementData.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
+                                    <TableCell colSpan={10} className="text-center py-6 text-muted-foreground">
                                         Nenhum dado de movimentação disponível.
                                     </TableCell>
                                 </TableRow>
@@ -1073,6 +1132,8 @@ export default function Dashboard() {
                                     <TableCell>TOTAL GERAL</TableCell>
                                     <TableCell className="text-right">{formatCurrency(assetMovementTotals.initialCost)}</TableCell>
                                     <TableCell className="text-right text-blue-600">+{formatCurrency(assetMovementTotals.additions)}</TableCell>
+                                    <TableCell className="text-right text-orange-600">{formatCurrency(assetMovementTotals.transfers)}</TableCell>
+                                    <TableCell className="text-right text-red-600">-{formatCurrency(assetMovementTotals.writeOffs)}</TableCell>
                                     <TableCell className="text-right">{formatCurrency(assetMovementTotals.finalCost)}</TableCell>
                                     <TableCell className="text-right text-slate-500">{formatCurrency(assetMovementTotals.initialDepreciation)}</TableCell>
                                     <TableCell className="text-right text-red-500">-{formatCurrency(assetMovementTotals.periodDepreciation)}</TableCell>

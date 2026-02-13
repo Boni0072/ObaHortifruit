@@ -197,7 +197,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { id: 'dashboard', label: 'Dashboard', icon: Home, path: '/dashboard' },
     { id: 'projects', label: 'Obras', icon: FileText, path: '/projects' },
     { id: 'budgets', label: 'Budgets', icon: DollarSign, path: '/budgets' },
-    { id: 'assets', label: 'Ativo em andamento', icon: Package, path: '/assets' },
+    { id: 'assets', label: 'Imobilizado', icon: Package, path: '/assets' },
     { id: 'asset-movements', label: 'Movimentações', icon: ArrowRightLeft, path: '/asset-movements' },
     { id: 'asset-depreciation', label: 'Depreciação', icon: TrendingDown, path: '/asset-depreciation' },
     { id: 'inventory', label: 'Inventário de Ativos', icon: ClipboardList, path: '/inventory' },

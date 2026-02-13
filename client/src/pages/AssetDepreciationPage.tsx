@@ -45,7 +45,7 @@ export default function AssetDepreciationPage() {
   const [expandedClasses, setExpandedClasses] = useState<Record<string, boolean>>({});
   const [isFiscalExpanded, setIsFiscalExpanded] = useState(false);
   const [isCorporateExpanded, setIsCorporateExpanded] = useState(false);
-  const [viewMode, setViewMode] = useState<'realized' | 'projected'>('realized');
+  const [viewMode, setViewMode] = useState<'realized' | 'projected'>('projected');
   const [useAcquisitionMonth, setUseAcquisitionMonth] = useState(false);
 
   useEffect(() => {
@@ -96,19 +96,21 @@ export default function AssetDepreciationPage() {
     return Number(asset.value || 0) + expensesTotal;
   };
 
+  const normalize = (str: string) => str?.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
+
   const depreciationData = useMemo((): DepreciationData | null => {
     if (!selectedAssetId || !assets) return null;
 
     const asset = assets.find(a => a.id === selectedAssetId);
     
-    const dateToUse = asset?.availabilityDate || asset?.startDate;
+    const dateToUse = asset?.startDate;
     if (!asset || !dateToUse) return null;
 
     const assetValue = getAssetValue(asset);
     const accumulatedDepreciation = Number(asset.accumulatedDepreciation || 0);
     const residualValue = Number(asset.residualValue || 0);
     
-    const assetClassDef = assetClasses.find(c => c.name === asset.assetClass);
+    const assetClassDef = assetClasses.find(c => normalize(c.name) === normalize(asset.assetClass));
     const effectiveUsefulLife = Number(asset.usefulLife) || Number(assetClassDef?.usefulLife) || 0;
     const usefulLifeInMonths = effectiveUsefulLife * 12;
     const depreciableValue = assetValue - residualValue;
@@ -197,14 +199,14 @@ export default function AssetDepreciationPage() {
   const selectedYear = displayYear;
 
   const calculateYearlyDepreciation = (asset: any, year: number, type: 'fiscal' | 'corporate' = 'fiscal') => {
-    const dateToUse = asset.availabilityDate || asset.startDate;
+    const dateToUse = asset.startDate;
     if (!dateToUse) return Array(12).fill({ val: 0, planned: 0, realized: 0, isCalculated: false });
     if (asset.depreciationStatus === 'paused') return Array(12).fill({ val: 0, planned: 0, realized: 0, isCalculated: false });
 
     const assetValue = getAssetValue(asset);
     const residualValue = Number(asset.residualValue || 0);
     
-    const assetClassDef = assetClasses.find(c => c.name === asset.assetClass);
+    const assetClassDef = assetClasses.find(c => normalize(c.name) === normalize(asset.assetClass));
     
     let effectiveUsefulLife = 0;
     if (type === 'corporate') {
@@ -226,7 +228,7 @@ export default function AssetDepreciationPage() {
     const depreciationEndDate = new Date(depreciationStartDate);
     depreciationEndDate.setMonth(depreciationEndDate.getMonth() + usefulLifeInMonths);
 
-    const lastRunDate = asset.lastDepreciationDate ? new Date(asset.lastDepreciationDate) : null;
+    const lastRunDate = asset.lastDepreciationDate ? getLocalDateFromISO(asset.lastDepreciationDate) : null;
 
     const results = [];
     for (let i = 0; i < 12; i++) {
@@ -235,8 +237,9 @@ export default function AssetDepreciationPage() {
         
         let isCalculated = false;
         if (lastRunDate) {
-            const lastRunMonthStart = new Date(lastRunDate.getFullYear(), lastRunDate.getMonth(), 1);
-            if (currentMonthDate <= lastRunMonthStart) isCalculated = true;
+            const lastRunStr = `${lastRunDate.getFullYear()}-${String(lastRunDate.getMonth() + 1).padStart(2, '0')}`;
+            const currentMonthStr = `${year}-${String(i + 1).padStart(2, '0')}`;
+            if (currentMonthStr <= lastRunStr) isCalculated = true;
         }
 
         const planned = isActive ? monthlyDepreciation : 0;
@@ -263,7 +266,11 @@ export default function AssetDepreciationPage() {
 
       assets.forEach(asset => {
           const yearlyData = calculateYearlyDepreciation(asset, selectedYear, 'fiscal');
-          const cls = asset.assetClass || "Sem Classe";
+          let cls = asset.assetClass || "Sem Classe";
+
+          if (asset.status === 'planejamento' || asset.status === 'em_desenvolvimento') {
+            cls = "Imobilizado em andamento";
+          }
           
           if (!groups[cls]) groups[cls] = { totalYear: 0, monthlyTotals: Array(12).fill(0), monthlyPlanned: Array(12).fill(0), monthlyRealized: Array(12).fill(0), assets: [] };
           
@@ -279,7 +286,10 @@ export default function AssetDepreciationPage() {
           groups[cls].totalYear += assetTotal;
       });
 
-      return Object.entries(groups).map(([name, data]) => ({ name, ...data }));
+      return Object.entries(groups)
+        .map(([name, data]) => ({ name, ...data }))
+        .filter(group => group.assets.length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name));
   }, [assets, displayYear, assetClasses, expenses, viewMode]);
 
   const classSummaryCorporate = useMemo(() => {
@@ -293,7 +303,11 @@ export default function AssetDepreciationPage() {
 
       assets.forEach(asset => {
           const yearlyData = calculateYearlyDepreciation(asset, selectedYear, 'corporate');
-          const cls = asset.assetClass || "Sem Classe";
+          let cls = asset.assetClass || "Sem Classe";
+
+          if (asset.status === 'planejamento' || asset.status === 'em_desenvolvimento') {
+            cls = "Imobilizado em andamento";
+          }
           
           if (!groups[cls]) groups[cls] = { totalYear: 0, monthlyTotals: Array(12).fill(0), monthlyPlanned: Array(12).fill(0), monthlyRealized: Array(12).fill(0), assets: [] };
           
@@ -309,7 +323,10 @@ export default function AssetDepreciationPage() {
           groups[cls].totalYear += assetTotal;
       });
 
-      return Object.entries(groups).map(([name, data]) => ({ name, ...data }));
+      return Object.entries(groups)
+        .map(([name, data]) => ({ name, ...data }))
+        .filter(group => group.assets.length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name));
   }, [assets, displayYear, assetClasses, expenses, viewMode]);
 
   const fiscalTotals = useMemo(() => {
@@ -353,13 +370,13 @@ export default function AssetDepreciationPage() {
     const pending = [];
 
     for (const asset of assetsToProcess) {
-        const dateToUse = asset.availabilityDate || asset.startDate;
+        const dateToUse = asset.startDate;
         if (!dateToUse) continue;
 
         const assetValue = getAssetValue(asset);
         const residualValue = Number(asset.residualValue || 0);
         
-        const assetClassDef = assetClasses.find(c => c.name === asset.assetClass);
+        const assetClassDef = assetClasses.find(c => normalize(c.name) === normalize(asset.assetClass));
         const effectiveUsefulLife = Number(asset.usefulLife) || Number(assetClassDef?.usefulLife) || 0;
         const usefulLifeInMonths = effectiveUsefulLife * 12;
         const depreciableValue = assetValue - residualValue;
@@ -466,12 +483,19 @@ export default function AssetDepreciationPage() {
                 newAccumulated = depreciableValue;
             }
             
-            // Allow update if value changed (even if it decreased, to correct errors) or if it increased
-            if (Math.abs(newAccumulated - currentAccumulated) > 0.01) {
+            // Construct YYYY-MM-DD string manually to avoid timezone issues
+            const lastDay = new Date(year, month, 0).getDate();
+            const targetDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+            // Allow update if value changed OR if it's a new period (date changed)
+            const isDateChanged = item.lastDepreciationDate !== targetDateStr;
+
+            if (Math.abs(newAccumulated - currentAccumulated) > 0.01 || isDateChanged) {
                 const assetRef = doc(db, "assets", item.id);
                 batch.update(assetRef, {
                     accumulatedDepreciation: newAccumulated,
-                    lastDepreciationDate: targetDate.toISOString(),
+                    lastDepreciationDate: targetDateStr,
+                    lastDepreciationRunAt: new Date().toISOString(),
                 });
                 assetsProcessed++;
             }
@@ -664,8 +688,8 @@ export default function AssetDepreciationPage() {
       <Card className="mb-6 border-blue-100 bg-blue-50/30">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setIsFiscalExpanded(!isFiscalExpanded)}>
-            {isFiscalExpanded ? <ChevronDown className="h-5 w-5 text-slate-600" /> : <ChevronRight className="h-5 w-5 text-slate-600" />}
-            <CardTitle className="text-lg font-bold text-slate-700">Resumo Anual por Classe - Fiscal ({selectedYear})</CardTitle>
+            {isFiscalExpanded ? <ChevronDown className="h-6 w-6 text-slate-600" /> : <ChevronRight className="h-6 w-6 text-slate-600" />}
+            <CardTitle className="text-xl font-bold text-slate-700">Resumo Anual por Classe - Fiscal ({selectedYear})</CardTitle>
           </div>
           <div className="flex items-center bg-slate-100 p-1 rounded-md">
             <button
@@ -697,17 +721,17 @@ export default function AssetDepreciationPage() {
         {isFiscalExpanded && (
         <CardContent>
           <div className="rounded-md border bg-white overflow-x-auto">
-            <Table className="min-w-[1200px]">
+            <Table className="min-w-[1200px] text-sm">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px] sticky left-0 bg-white z-10"></TableHead>
-                  <TableHead className="sticky left-[50px] bg-white z-10 min-w-[200px]">Classe do Ativo</TableHead>
+                  <TableHead className="sticky left-[50px] bg-white z-10 min-w-[200px] text-sm">Classe do Ativo</TableHead>
                   {MONTH_LABELS.map((month, i) => (
-                    <TableHead key={i} className="text-right text-xs px-2">
+                    <TableHead key={i} className="text-right text-sm px-2">
                       {month}
                     </TableHead>
                   ))}
-                  <TableHead className="text-right font-bold">Total</TableHead>
+                  <TableHead className="text-right font-bold text-sm">Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -717,18 +741,18 @@ export default function AssetDepreciationPage() {
                       <TableCell className="sticky left-0 bg-slate-50 z-10">
                         {expandedClasses[group.name] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </TableCell>
-                      <TableCell className="sticky left-[50px] bg-slate-50 z-10">
+                      <TableCell className="sticky left-[50px] bg-slate-50 z-10 text-sm">
                         {group.name} <span className="text-xs text-muted-foreground font-normal ml-2">({group.assets.length})</span>
                       </TableCell>
                       {group.monthlyTotals.map((total, idx) => {
                         const isComplete = group.monthlyPlanned[idx] > 0 && Math.abs(group.monthlyRealized[idx] - group.monthlyPlanned[idx]) < 0.01;
                         return (
-                          <TableCell key={idx} className={`text-right text-xs px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
+                          <TableCell key={idx} className={`text-right text-sm px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
                             {total > 0 ? total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
                           </TableCell>
                         );
                       })}
-                      <TableCell className="text-right font-bold text-xs">
+                      <TableCell className="text-right font-bold text-sm">
                         {group.totalYear.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
                     </TableRow>
@@ -742,11 +766,11 @@ export default function AssetDepreciationPage() {
                           </div>
                         </TableCell>
                         {asset.yearlyData.map((data: any, idx: number) => (
-                          <TableCell key={idx} className={`text-right text-xs px-2 ${data.isCalculated ? 'text-green-600 font-medium' : 'text-slate-500'}`}>
+                          <TableCell key={idx} className={`text-right text-sm px-2 ${data.isCalculated ? 'text-green-600 font-medium' : 'text-slate-500'}`}>
                              {data.val > 0 ? data.val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (viewMode === 'projected' && data.val === 0 ? "-" : "-")}
                           </TableCell>
                         ))}
-                        <TableCell className="text-right text-xs font-medium">
+                        <TableCell className="text-right text-sm font-medium">
                           {asset.assetTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                       </TableRow>
@@ -762,16 +786,16 @@ export default function AssetDepreciationPage() {
               <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-200">
                 <TableRow>
                   <TableCell className="sticky left-0 bg-slate-100 z-10"></TableCell>
-                  <TableCell className="sticky left-[50px] bg-slate-100 z-10 text-right pr-4">TOTAL GERAL</TableCell>
+                  <TableCell className="sticky left-[50px] bg-slate-100 z-10 text-right pr-4 text-sm">TOTAL GERAL</TableCell>
                   {fiscalTotals.monthly.map((val, idx) => {
                     const isComplete = fiscalTotals.monthlyPlanned[idx] > 0 && Math.abs(fiscalTotals.monthlyRealized[idx] - fiscalTotals.monthlyPlanned[idx]) < 0.01;
                     return (
-                      <TableCell key={idx} className={`text-right text-xs px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
+                      <TableCell key={idx} className={`text-right text-sm px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
                         {val > 0 ? val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
                       </TableCell>
                     );
                   })}
-                  <TableCell className="text-right text-xs">
+                  <TableCell className="text-right text-sm">
                     {fiscalTotals.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                 </TableRow>
@@ -783,32 +807,32 @@ export default function AssetDepreciationPage() {
         {!isFiscalExpanded && (
         <CardContent>
           <div className="rounded-md border bg-white overflow-x-auto">
-            <Table className="min-w-[1200px]">
+            <Table className="min-w-[1200px] text-sm">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px] sticky left-0 bg-white z-10"></TableHead>
-                  <TableHead className="sticky left-[50px] bg-white z-10 min-w-[200px]">Classe do Ativo</TableHead>
+                  <TableHead className="sticky left-[50px] bg-white z-10 min-w-[200px] text-sm">Classe do Ativo</TableHead>
                   {MONTH_LABELS.map((month, i) => (
-                    <TableHead key={i} className="text-right text-xs px-2">
+                    <TableHead key={i} className="text-right text-sm px-2">
                       {month}
                     </TableHead>
                   ))}
-                  <TableHead className="text-right font-bold">Total</TableHead>
+                  <TableHead className="text-right font-bold text-sm">Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow className="bg-slate-100 font-bold border-t-2 border-slate-200">
                   <TableCell className="sticky left-0 bg-slate-100 z-10"></TableCell>
-                  <TableCell className="sticky left-[50px] bg-slate-100 z-10 text-right pr-4">TOTAL GERAL</TableCell>
+                  <TableCell className="sticky left-[50px] bg-slate-100 z-10 text-right pr-4 text-sm">TOTAL GERAL</TableCell>
                   {fiscalTotals.monthly.map((val, idx) => {
                     const isComplete = fiscalTotals.monthlyPlanned[idx] > 0 && Math.abs(fiscalTotals.monthlyRealized[idx] - fiscalTotals.monthlyPlanned[idx]) < 0.01;
                     return (
-                      <TableCell key={idx} className={`text-right text-xs px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
+                      <TableCell key={idx} className={`text-right text-sm px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
                         {val > 0 ? val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
                       </TableCell>
                     );
                   })}
-                  <TableCell className="text-right text-xs">
+                  <TableCell className="text-right text-sm">
                     {fiscalTotals.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                 </TableRow>
@@ -822,24 +846,24 @@ export default function AssetDepreciationPage() {
       <Card className="mb-6 border-green-100 bg-green-50/30">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setIsCorporateExpanded(!isCorporateExpanded)}>
-            {isCorporateExpanded ? <ChevronDown className="h-5 w-5 text-slate-600" /> : <ChevronRight className="h-5 w-5 text-slate-600" />}
-            <CardTitle className="text-lg font-bold text-slate-700">Resumo Anual por Classe - Societário ({selectedYear})</CardTitle>
+            {isCorporateExpanded ? <ChevronDown className="h-6 w-6 text-slate-600" /> : <ChevronRight className="h-6 w-6 text-slate-600" />}
+            <CardTitle className="text-xl font-bold text-slate-700">Resumo Anual por Classe - Societário ({selectedYear})</CardTitle>
           </div>
         </CardHeader>
         {isCorporateExpanded && (
         <CardContent>
           <div className="rounded-md border bg-white overflow-x-auto">
-            <Table className="min-w-[1200px]">
+            <Table className="min-w-[1200px] text-sm">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px] sticky left-0 bg-white z-10"></TableHead>
-                  <TableHead className="sticky left-[50px] bg-white z-10 min-w-[200px]">Classe do Ativo</TableHead>
+                  <TableHead className="sticky left-[50px] bg-white z-10 min-w-[200px] text-sm">Classe do Ativo</TableHead>
                   {MONTH_LABELS.map((month, i) => (
-                    <TableHead key={i} className="text-right text-xs px-2">
+                    <TableHead key={i} className="text-right text-sm px-2">
                       {month}
                     </TableHead>
                   ))}
-                  <TableHead className="text-right font-bold">Total</TableHead>
+                  <TableHead className="text-right font-bold text-sm">Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -849,18 +873,18 @@ export default function AssetDepreciationPage() {
                       <TableCell className="sticky left-0 bg-slate-50 z-10">
                         {expandedClasses[group.name] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </TableCell>
-                      <TableCell className="sticky left-[50px] bg-slate-50 z-10">
+                      <TableCell className="sticky left-[50px] bg-slate-50 z-10 text-sm">
                         {group.name} <span className="text-xs text-muted-foreground font-normal ml-2">({group.assets.length})</span>
                       </TableCell>
                       {group.monthlyTotals.map((total, idx) => {
                         const isComplete = group.monthlyPlanned[idx] > 0 && Math.abs(group.monthlyRealized[idx] - group.monthlyPlanned[idx]) < 0.01;
                         return (
-                          <TableCell key={idx} className={`text-right text-xs px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
+                          <TableCell key={idx} className={`text-right text-sm px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
                             {total > 0 ? total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
                           </TableCell>
                         );
                       })}
-                      <TableCell className="text-right font-bold text-xs">
+                      <TableCell className="text-right font-bold text-sm">
                         {group.totalYear.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
                     </TableRow>
@@ -874,11 +898,11 @@ export default function AssetDepreciationPage() {
                           </div>
                         </TableCell>
                         {asset.yearlyData.map((data: any, idx: number) => (
-                          <TableCell key={idx} className={`text-right text-xs px-2 ${data.isCalculated ? 'text-green-600 font-medium' : 'text-slate-500'}`}>
+                          <TableCell key={idx} className={`text-right text-sm px-2 ${data.isCalculated ? 'text-green-600 font-medium' : 'text-slate-500'}`}>
                              {data.val > 0 ? data.val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
                           </TableCell>
                         ))}
-                        <TableCell className="text-right text-xs font-medium">
+                        <TableCell className="text-right text-sm font-medium">
                           {asset.assetTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                       </TableRow>
@@ -894,16 +918,16 @@ export default function AssetDepreciationPage() {
               <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-200">
                 <TableRow>
                   <TableCell className="sticky left-0 bg-slate-100 z-10"></TableCell>
-                  <TableCell className="sticky left-[50px] bg-slate-100 z-10 text-right pr-4">TOTAL GERAL</TableCell>
+                  <TableCell className="sticky left-[50px] bg-slate-100 z-10 text-right pr-4 text-sm">TOTAL GERAL</TableCell>
                   {corporateTotals.monthly.map((val, idx) => {
                     const isComplete = corporateTotals.monthlyPlanned[idx] > 0 && Math.abs(corporateTotals.monthlyRealized[idx] - corporateTotals.monthlyPlanned[idx]) < 0.01;
                     return (
-                      <TableCell key={idx} className={`text-right text-xs px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
+                      <TableCell key={idx} className={`text-right text-sm px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
                         {val > 0 ? val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
                       </TableCell>
                     );
                   })}
-                  <TableCell className="text-right text-xs">
+                  <TableCell className="text-right text-sm">
                     {corporateTotals.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                 </TableRow>
@@ -915,32 +939,32 @@ export default function AssetDepreciationPage() {
         {!isCorporateExpanded && (
         <CardContent>
           <div className="rounded-md border bg-white overflow-x-auto">
-            <Table className="min-w-[1200px]">
+            <Table className="min-w-[1200px] text-sm">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px] sticky left-0 bg-white z-10"></TableHead>
-                  <TableHead className="sticky left-[50px] bg-white z-10 min-w-[200px]">Classe do Ativo</TableHead>
+                  <TableHead className="sticky left-[50px] bg-white z-10 min-w-[200px] text-sm">Classe do Ativo</TableHead>
                   {MONTH_LABELS.map((month, i) => (
-                    <TableHead key={i} className="text-right text-xs px-2">
+                    <TableHead key={i} className="text-right text-sm px-2">
                       {month}
                     </TableHead>
                   ))}
-                  <TableHead className="text-right font-bold">Total</TableHead>
+                  <TableHead className="text-right font-bold text-sm">Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow className="bg-slate-100 font-bold border-t-2 border-slate-200">
                   <TableCell className="sticky left-0 bg-slate-100 z-10"></TableCell>
-                  <TableCell className="sticky left-[50px] bg-slate-100 z-10 text-right pr-4">TOTAL GERAL</TableCell>
+                  <TableCell className="sticky left-[50px] bg-slate-100 z-10 text-right pr-4 text-sm">TOTAL GERAL</TableCell>
                   {corporateTotals.monthly.map((val, idx) => {
                     const isComplete = corporateTotals.monthlyPlanned[idx] > 0 && Math.abs(corporateTotals.monthlyRealized[idx] - corporateTotals.monthlyPlanned[idx]) < 0.01;
                     return (
-                      <TableCell key={idx} className={`text-right text-xs px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
+                      <TableCell key={idx} className={`text-right text-sm px-2 ${isComplete ? 'bg-green-100 text-green-700 font-medium' : ''}`}>
                         {val > 0 ? val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
                       </TableCell>
                     );
                   })}
-                  <TableCell className="text-right text-xs">
+                  <TableCell className="text-right text-sm">
                     {corporateTotals.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                 </TableRow>
@@ -1029,31 +1053,31 @@ export default function AssetDepreciationPage() {
               <div><span className="font-medium text-muted-foreground">Fim Depreciação:</span> {depreciationData.depreciationEndDate.toLocaleDateString('pt-BR')}</div>
             </div>
             <div className="border rounded-lg overflow-hidden">
-              <Table>
+              <Table className="text-sm">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Mês/Ano (Projeção)</TableHead>
-                    <TableHead className="text-right">Quota Mensal</TableHead>
-                    <TableHead className="text-right">Depreciação Acumulada</TableHead>
-                    <TableHead className="text-right">Valor Contábil</TableHead>
+                    <TableHead className="text-sm">Mês/Ano (Projeção)</TableHead>
+                    <TableHead className="text-right text-sm">Quota Mensal</TableHead>
+                    <TableHead className="text-right text-sm">Depreciação Acumulada</TableHead>
+                    <TableHead className="text-right text-sm">Valor Contábil</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {/* Initial State */}
                   <TableRow className="bg-slate-50 font-medium">
-                    <TableCell>Data de Ativação ({new Date(assets?.find(a=>a.id === selectedAssetId)?.availabilityDate || "").toLocaleDateString('pt-BR')})</TableCell>
-                    <TableCell className="text-right text-green-600">(+ R$ {depreciationData.assetValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})</TableCell>
-                    <TableCell className="text-right">R$ 0,00</TableCell>
-                    <TableCell className="text-right">R$ {depreciationData.assetValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                    <TableCell className="text-sm">Data de Ativação ({new Date(assets?.find(a=>a.id === selectedAssetId)?.availabilityDate || "").toLocaleDateString('pt-BR')})</TableCell>
+                    <TableCell className="text-right text-green-600 text-sm">(+ R$ {depreciationData.assetValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})</TableCell>
+                    <TableCell className="text-right text-sm">R$ 0,00</TableCell>
+                    <TableCell className="text-right text-sm">R$ {depreciationData.assetValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
                   </TableRow>
                   {depreciationData.monthlyBreakdown
                     .filter(row => !filterMonth || row.dateStr === filterMonth)
                     .map((row, index) => (
                     <TableRow key={index}>
-                      <TableCell className="capitalize">{row.month}</TableCell>
-                      <TableCell className="text-right text-red-600">(- R$ {row.depreciation.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})</TableCell>
-                      <TableCell className="text-right">R$ {row.accumulated.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
-                      <TableCell className="text-right font-medium">R$ {row.bookValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="capitalize text-sm">{row.month}</TableCell>
+                      <TableCell className="text-right text-red-600 text-sm">(- R$ {row.depreciation.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})</TableCell>
+                      <TableCell className="text-right text-sm">R$ {row.accumulated.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="text-right font-medium text-sm">R$ {row.bookValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
