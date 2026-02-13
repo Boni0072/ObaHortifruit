@@ -55,6 +55,16 @@ const getBase64ImageFromURL = (url: string): Promise<string> => {
   });
 };
 
+const getLocalDateFromISO = (isoString: string) => {
+  if (!isoString) return new Date();
+  if (isoString.length === 10 && isoString.includes('-')) {
+      const [y, m, d] = isoString.split('-').map(Number);
+      return new Date(y, m - 1, d);
+  }
+  const date = new Date(isoString);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+};
+
 export default function ReportsPage() {
   const { user } = useAuth();
   const [schedules, setSchedules] = useState<InventorySchedule[]>([]);
@@ -186,6 +196,15 @@ export default function ReportsPage() {
     }
   }, [schedulesByDate]);
 
+  const [expandedDepreciationDates, setExpandedDepreciationDates] = useState<Record<string, boolean>>({});
+
+  const toggleDepreciationDate = (date: string) => {
+    setExpandedDepreciationDates(prev => ({
+      ...prev,
+      [date]: !prev[date]
+    }));
+  };
+
   const handleExportStatusHistory = () => {
     if (!statusHistory || statusHistory.length === 0) {
       toast.error("Não há dados de histórico para exportar.");
@@ -241,9 +260,14 @@ export default function ReportsPage() {
         if (usefulLifeYears > 0) {
             monthlyQuota = Math.max(0, totalCost - residualValue) / (usefulLifeYears * 12);
             if (asset.startDate && asset.lastDepreciationDate) {
-                const start = new Date(asset.startDate);
-                const end = new Date(asset.lastDepreciationDate);
-                const monthsDiff = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+                const start = getLocalDateFromISO(asset.startDate);
+                start.setMonth(start.getMonth() + 1, 1); // Regra do mês seguinte (igual ao Dashboard)
+
+                const end = getLocalDateFromISO(asset.lastDepreciationDate);
+                const startMonthIndex = start.getFullYear() * 12 + start.getMonth();
+                const endMonthIndex = end.getFullYear() * 12 + end.getMonth();
+                const monthsDiff = endMonthIndex - startMonthIndex + 1;
+
                 calculatedQuotas = Math.max(0, Math.min(monthsDiff, totalQuotas));
                 accumulated = calculatedQuotas * monthlyQuota;
             }
@@ -521,10 +545,57 @@ export default function ReportsPage() {
         <CardContent>
           {Object.entries(assetsByDate).map(([date, groupAssets]) => {
             const runTime = groupAssets.find((a: any) => a.lastDepreciationRunAt)?.lastDepreciationRunAt;
+            const isExpanded = expandedDepreciationDates[date];
+            
+            const groupTotals = groupAssets.reduce((acc: any, asset: any) => {
+                const assetExpenses = expenses.filter(e => String(e.assetId) === String(asset.id));
+                const totalCost = assetExpenses.reduce((sum: number, curr: any) => sum + Number(curr.amount), Number(asset.value || 0));
+
+                const normalize = (str: string) => str?.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
+                const assetClassDef = assetClasses?.find((c: any) => normalize(c.name) === normalize(asset.assetClass));
+                const usefulLifeYears = depreciationType === 'corporate' 
+                    ? (Number(asset.corporateUsefulLife) || Number(assetClassDef?.corporateUsefulLife) || 0)
+                    : (Number(asset.usefulLife) || Number(assetClassDef?.usefulLife) || 0);
+
+                const residualValue = Number(asset.residualValue || 0);
+                const totalQuotas = usefulLifeYears * 12;
+                let monthlyQuota = 0;
+                let calculatedQuotas = 0;
+                let accumulated = 0;
+
+                if (usefulLifeYears > 0) {
+                    monthlyQuota = Math.max(0, totalCost - residualValue) / (usefulLifeYears * 12);
+                    if (asset.startDate && asset.lastDepreciationDate) {
+                        const start = getLocalDateFromISO(asset.startDate);
+                        start.setMonth(start.getMonth() + 1, 1); 
+
+                        const end = getLocalDateFromISO(asset.lastDepreciationDate);
+                        const startMonthIndex = start.getFullYear() * 12 + start.getMonth();
+                        const endMonthIndex = end.getFullYear() * 12 + end.getMonth();
+                        const monthsDiff = endMonthIndex - startMonthIndex + 1;
+
+                        calculatedQuotas = Math.max(0, Math.min(monthsDiff, totalQuotas));
+                        accumulated = calculatedQuotas * monthlyQuota;
+                    }
+                }
+
+                const netValue = totalCost - accumulated;
+
+                return {
+                    totalCost: acc.totalCost + totalCost,
+                    monthlyQuota: acc.monthlyQuota + monthlyQuota,
+                    accumulated: acc.accumulated + accumulated,
+                    netValue: acc.netValue + netValue
+                };
+            }, { totalCost: 0, monthlyQuota: 0, accumulated: 0, netValue: 0 });
             
             return (
-            <div key={date} className="mb-8 last:mb-0">
-                <h3 className="text-sm font-semibold text-slate-500 mb-3 flex items-center gap-2 uppercase tracking-wider bg-slate-50 p-2 rounded border">
+            <div key={date} className="mb-4 last:mb-0">
+                <h3 
+                    className="text-sm font-semibold text-slate-500 mb-2 flex items-center gap-2 uppercase tracking-wider bg-slate-50 p-2 rounded border cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                    onClick={() => toggleDepreciationDate(date)}
+                >
+                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     <CalendarIcon className="h-4 w-4" />
                     {date === "Não Calculado" ? "Não Calculado" : (
                         <div className="flex items-center gap-2">
@@ -536,6 +607,7 @@ export default function ReportsPage() {
                         {groupAssets.length} ativos
                     </span>
                 </h3>
+                {isExpanded && (
                 <div className="rounded-md border overflow-hidden">
                     <Table>
                     <TableHeader>
@@ -572,9 +644,14 @@ export default function ReportsPage() {
                             if (usefulLifeYears > 0) {
                                 monthlyQuota = Math.max(0, totalCost - residualValue) / (usefulLifeYears * 12);
                                 if (asset.startDate && asset.lastDepreciationDate) {
-                                    const start = new Date(asset.startDate);
-                                    const end = new Date(asset.lastDepreciationDate);
-                                    const monthsDiff = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+                                    const start = getLocalDateFromISO(asset.startDate);
+                                    start.setMonth(start.getMonth() + 1, 1); // Regra do mês seguinte (igual ao Dashboard)
+
+                                    const end = getLocalDateFromISO(asset.lastDepreciationDate);
+                                    const startMonthIndex = start.getFullYear() * 12 + start.getMonth();
+                                    const endMonthIndex = end.getFullYear() * 12 + end.getMonth();
+                                    const monthsDiff = endMonthIndex - startMonthIndex + 1;
+
                                     calculatedQuotas = Math.max(0, Math.min(monthsDiff, totalQuotas));
                                     accumulated = calculatedQuotas * monthlyQuota;
                                 }
@@ -598,8 +675,18 @@ export default function ReportsPage() {
                             );
                         })}
                     </TableBody>
+                    <tfoot className="bg-slate-50 font-bold border-t">
+                        <TableRow>
+                            <TableCell colSpan={6} className="text-right">TOTAIS</TableCell>
+                            <TableCell className="text-right">R$ {groupTotals.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                            <TableCell className="text-right">R$ {groupTotals.monthlyQuota.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                            <TableCell className="text-right text-red-600">R$ {groupTotals.accumulated.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                            <TableCell className="text-right font-bold">R$ {groupTotals.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                        </TableRow>
+                    </tfoot>
                     </Table>
                 </div>
+                )}
             </div>
             );
           })}
