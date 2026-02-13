@@ -72,6 +72,8 @@ export default function ReportsPage() {
   const [statusHistory, setStatusHistory] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [depreciationType, setDepreciationType] = useState<'fiscal' | 'corporate'>('fiscal');
+  const [assets, setAssets] = useState<any[]>([]);
+  const [assetClasses, setAssetClasses] = useState<any[]>([]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "inventory_schedules"), (snapshot) => {
@@ -110,6 +112,19 @@ export default function ReportsPage() {
   const { data: assets } = trpc.assets.list.useQuery();
   const { data: assetClasses } = trpc.accounting.listAssetClasses.useQuery();
   const updateAssetMutation = trpc.assets.update.useMutation();
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "assets"), (snapshot) => {
+      setAssets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "asset_classes"), (snapshot) => {
+      setAssetClasses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, []);
 
   const assetsByDate = useMemo(() => {
     if (!assets) return {};
@@ -144,8 +159,10 @@ export default function ReportsPage() {
         if (result.verified && result.newCostCenter) {
           await updateAssetMutation.mutateAsync({
             id: result.assetId,
+          await updateDoc(doc(db, "assets", result.assetId), {
             costCenter: result.newCostCenter
           } as any);
+          });
         }
       }
 
