@@ -917,9 +917,9 @@ export default function AssetInventoryPage() {
                       onCheckedChange={toggleAllAssets}
                     />
                   </TableHead>
-                  <TableHead className="text-base">Plaqueta</TableHead>
+                  <TableHead className="text-base w-[90px]">Plaqueta</TableHead>
                   <TableHead className="text-base">Nome</TableHead>
-                  <TableHead className="text-base">Centro de Custo</TableHead>
+                  <TableHead className="text-base w-[120px]">Centro de Custo</TableHead>
                   <TableHead className="text-base">Inventariado</TableHead>
                   <TableHead className="text-base">Obs</TableHead>
                   <TableHead className="text-base">Responsável</TableHead>
