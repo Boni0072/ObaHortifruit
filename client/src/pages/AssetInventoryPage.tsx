@@ -16,6 +16,13 @@ import { toast } from "sonner";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useLocation } from "wouter";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 interface InventoryResult {
   assetId: string;
@@ -172,6 +179,10 @@ export default function AssetInventoryPage() {
   const [scanInput, setScanInput] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const filteredAssets = assets?.filter(asset => {
     const matchesSearch = (asset.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -180,8 +191,18 @@ export default function AssetInventoryPage() {
     const assetCC = typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter;
     const matchesCostCenter = selectedCostCenter === "all" || assetCC === selectedCostCenter;
     const matchesAssetClass = selectedAssetClass === "all" || asset.assetClass === selectedAssetClass;
-    return matchesSearch && matchesCostCenter && matchesAssetClass;
+    const isCompleted = asset.status === 'concluido';
+    return matchesSearch && matchesCostCenter && matchesAssetClass && isCompleted;
   });
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCostCenter, selectedAssetClass]);
+
+  const isFiltering = searchTerm !== "" || selectedCostCenter !== "all" || selectedAssetClass !== "all";
+  const totalPages = Math.ceil((filteredAssets?.length || 0) / itemsPerPage);
+  const paginatedAssets = isFiltering ? filteredAssets : filteredAssets?.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // Efeito para abrir o modal diretamente via URL
   useEffect(() => {
@@ -831,6 +852,7 @@ export default function AssetInventoryPage() {
               <Loader2 className="h-8 w-8 animate-spin" />
             </div>
           ) : (
+            <>
             <Table className="text-base">
               <TableHeader>
                 <TableRow>
@@ -851,7 +873,7 @@ export default function AssetInventoryPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAssets?.map((asset) => {
+                {paginatedAssets?.map((asset) => {
                   const activeSchedule = getActiveSchedule(asset.id);
                   const isAssignedToMe = activeSchedule && activeSchedule.status === 'pending' && currentUserId && activeSchedule.userIds.some(uid => String(uid) === String(currentUserId));
                   
@@ -941,6 +963,41 @@ export default function AssetInventoryPage() {
                 )}
               </TableBody>
             </Table>
+            
+            {filteredAssets && filteredAssets.length > 0 && !isFiltering && (
+              <div className="mt-4">
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setCurrentPage((p) => Math.max(1, p - 1));
+                        }}
+                        className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                      />
+                    </PaginationItem>
+                    <PaginationItem>
+                      <span className="text-sm text-muted-foreground mx-4">
+                        Página {currentPage} de {totalPages}
+                      </span>
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationNext
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setCurrentPage((p) => Math.min(totalPages, p + 1));
+                        }}
+                        className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            )}
+            </>
           )}
         </CardContent>
       </Card>
