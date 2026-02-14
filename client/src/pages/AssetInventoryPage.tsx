@@ -107,6 +107,7 @@ export default function AssetInventoryPage() {
   const [assets, setAssets] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [costCenters, setCostCenters] = useState<any[]>([]);
+  const [assetClasses, setAssetClasses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -152,6 +153,14 @@ export default function AssetInventoryPage() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "asset_classes"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAssetClasses(data);
+    });
+    return () => unsubscribe();
+  }, []);
   
   // Schedule Form State
   const [scheduleDate, setScheduleDate] = useState(new Date().toISOString().split("T")[0]);
@@ -159,6 +168,7 @@ export default function AssetInventoryPage() {
   const [notes, setNotes] = useState("");
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
   const [selectedCostCenter, setSelectedCostCenter] = useState("all");
+  const [selectedAssetClass, setSelectedAssetClass] = useState("all");
   const [scanInput, setScanInput] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -169,7 +179,8 @@ export default function AssetInventoryPage() {
     (asset.assetNumber || "").toLowerCase().includes(searchTerm.toLowerCase());
     const assetCC = typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter;
     const matchesCostCenter = selectedCostCenter === "all" || assetCC === selectedCostCenter;
-    return matchesSearch && matchesCostCenter;
+    const matchesAssetClass = selectedAssetClass === "all" || asset.assetClass === selectedAssetClass;
+    return matchesSearch && matchesCostCenter && matchesAssetClass;
   });
 
   // Efeito para abrir o modal diretamente via URL
@@ -784,7 +795,20 @@ export default function AssetInventoryPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <div className="w-[280px]">
+            <div className="w-[240px]">
+              <Select value={selectedAssetClass} onValueChange={setSelectedAssetClass}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filtrar por Classe" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as Classes</SelectItem>
+                  {assetClasses.map((cls: any) => (
+                    <SelectItem key={cls.id} value={cls.name}>{cls.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-[240px]">
               <Select value={selectedCostCenter} onValueChange={setSelectedCostCenter}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filtrar por Centro de Custo" />
