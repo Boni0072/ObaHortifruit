@@ -183,6 +183,17 @@ export default function AssetInventoryPage() {
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [showOnlyWithObs, setShowOnlyWithObs] = useState(false);
+
+  const getLastInventory = (assetId: string) => {
+    return schedules
+      .filter(s => s.status === 'completed' && s.results?.some(r => r.assetId === assetId))
+      .sort((a, b) => {
+        const dateA = a.approvedAt ? new Date(a.approvedAt).getTime() : new Date(a.date).getTime();
+        const dateB = b.approvedAt ? new Date(b.approvedAt).getTime() : new Date(b.date).getTime();
+        return dateB - dateA;
+      })[0];
+  };
 
   const filteredAssets = assets?.filter(asset => {
     const matchesSearch = (asset.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -192,15 +203,20 @@ export default function AssetInventoryPage() {
     const matchesCostCenter = selectedCostCenter === "all" || assetCC === selectedCostCenter;
     const matchesAssetClass = selectedAssetClass === "all" || asset.assetClass === selectedAssetClass;
     const isCompleted = asset.status === 'concluido';
-    return matchesSearch && matchesCostCenter && matchesAssetClass && isCompleted;
+    
+    const lastInventory = getLastInventory(asset.id);
+    const hasObs = lastInventory?.results?.find(r => r.assetId === asset.id)?.observations;
+    const matchesObs = !showOnlyWithObs || (showOnlyWithObs && !!hasObs);
+
+    return matchesSearch && matchesCostCenter && matchesAssetClass && isCompleted && matchesObs;
   });
 
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedCostCenter, selectedAssetClass]);
+  }, [searchTerm, selectedCostCenter, selectedAssetClass, showOnlyWithObs]);
 
-  const isFiltering = searchTerm !== "" || selectedCostCenter !== "all" || selectedAssetClass !== "all";
+  const isFiltering = searchTerm !== "" || selectedCostCenter !== "all" || selectedAssetClass !== "all" || showOnlyWithObs;
   const totalPages = Math.ceil((filteredAssets?.length || 0) / itemsPerPage);
   const paginatedAssets = isFiltering ? filteredAssets : filteredAssets?.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
@@ -250,6 +266,31 @@ export default function AssetInventoryPage() {
               costCenter: result.newCostCenter,
               updatedAt: new Date().toISOString()
             });
+            const asset = assets.find(a => a.id === result.assetId);
+            const currentCC = typeof asset?.costCenter === 'object' ? (asset.costCenter as any).code : asset?.costCenter;
+
+            if (asset && result.newCostCenter !== currentCC) {
+              const assetRef = doc(db, "assets", result.assetId);
+              batch.update(assetRef, { 
+                costCenter: result.newCostCenter,
+                updatedAt: new Date().toISOString()
+              });
+
+              const movementRef = doc(collection(db, "asset_movements"));
+              batch.set(movementRef, {
+                assetId: result.assetId,
+                assetName: asset.name || "Desconhecido",
+                assetNumber: asset.assetNumber || "",
+                type: "transfer_cost_center",
+                movementCategory: "transfer",
+                date: new Date().toISOString(),
+                originCostCenter: currentCC || null,
+                destinationCostCenter: result.newCostCenter,
+                originProjectId: asset.projectId || null,
+                reason: `Ajuste via Inventário (${new Date(schedule.date).toLocaleDateString('pt-BR')})`,
+                createdAt: new Date().toISOString()
+              });
+            }
           }
         });
       }
@@ -806,7 +847,7 @@ export default function AssetInventoryPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -818,7 +859,7 @@ export default function AssetInventoryPage() {
             </div>
             <div className="w-[240px]">
               <Select value={selectedAssetClass} onValueChange={setSelectedAssetClass}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-blue-50 border-blue-200 text-blue-700">
                   <SelectValue placeholder="Filtrar por Classe" />
                 </SelectTrigger>
                 <SelectContent>
@@ -831,7 +872,7 @@ export default function AssetInventoryPage() {
             </div>
             <div className="w-[240px]">
               <Select value={selectedCostCenter} onValueChange={setSelectedCostCenter}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-green-50 border-green-200 text-green-700">
                   <SelectValue placeholder="Filtrar por Centro de Custo" />
                 </SelectTrigger>
                 <SelectContent>
@@ -843,6 +884,20 @@ export default function AssetInventoryPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex items-center space-x-2 bg-orange-50 px-3 py-2 rounded-md border border-orange-200 text-orange-800">
+              <Checkbox 
+                id="show-obs" 
+                checked={showOnlyWithObs}
+                onCheckedChange={(checked) => setShowOnlyWithObs(!!checked)}
+                className="border-orange-400 data-[state=checked]:bg-orange-600 data-[state=checked]:text-white"
+              />
+              <label 
+                htmlFor="show-obs" 
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer whitespace-nowrap"
+              >
+                Com Obs.
+              </label>
             </div>
           </div>
         </CardHeader>
@@ -862,19 +917,18 @@ export default function AssetInventoryPage() {
                       onCheckedChange={toggleAllAssets}
                     />
                   </TableHead>
-                  <TableHead className="text-base">Nº Ativo</TableHead>
                   <TableHead className="text-base">Plaqueta</TableHead>
                   <TableHead className="text-base">Nome</TableHead>
                   <TableHead className="text-base">Centro de Custo</TableHead>
-                  <TableHead className="text-base">Status</TableHead>
+                  <TableHead className="text-base">Inventariado</TableHead>
+                  <TableHead className="text-base">Obs</TableHead>
                   <TableHead className="text-base">Responsável</TableHead>
-                  <TableHead className="text-right text-base">Valor</TableHead>
-                  <TableHead className="text-center text-base">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginatedAssets?.map((asset) => {
                   const activeSchedule = getActiveSchedule(asset.id);
+                  const lastInventory = getLastInventory(asset.id);
                   const isAssignedToMe = activeSchedule && activeSchedule.status === 'pending' && currentUserId && activeSchedule.userIds.some(uid => String(uid) === String(currentUserId));
                   
                   return (
@@ -896,8 +950,12 @@ export default function AssetInventoryPage() {
                         disabled={!!activeSchedule}
                       />
                     </TableCell>
-                    <TableCell className="font-mono text-base">{asset.assetNumber || "-"}</TableCell>
-                    <TableCell className="text-base">{asset.tagNumber || "-"}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="text-base">{asset.tagNumber || "-"}</span>
+                        <span className="text-xs font-mono text-muted-foreground">{asset.assetNumber || "-"}</span>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <div className="font-medium text-base">{asset.name}</div>
                       <div className="text-sm text-muted-foreground truncate max-w-[300px]">{asset.description}</div>
@@ -906,14 +964,38 @@ export default function AssetInventoryPage() {
                       {(() => {
                          const ccCode = typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter;
                          const cc = costCenters.find(c => c.code === ccCode);
-                         return cc ? `${cc.code} - ${cc.name}` : (ccCode || "-");
+                         return (
+                           <div className="flex flex-col">
+                             <span>{cc ? `${cc.code} - ${cc.name}` : (ccCode || "-")}</span>
+                             {cc?.responsible && (
+                               <span className="text-sm text-muted-foreground">{cc.responsible}</span>
+                             )}
+                           </div>
+                         );
                       })()}
                     </TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium capitalize
-                        ${asset.status === 'concluido' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                        {asset.status?.replace('_', ' ')}
-                      </span>
+                      {(() => {
+                        const result = lastInventory?.results?.find(r => r.assetId === asset.id);
+                        if (result?.verified) {
+                          return (
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium text-green-600 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Sim
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {lastInventory.approvedAt 
+                                  ? new Date(lastInventory.approvedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+                                  : new Date(lastInventory.date).toLocaleDateString('pt-BR')}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return <span className="text-sm text-muted-foreground">Não</span>;
+                      })()}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate" title={lastInventory?.results?.find(r => r.assetId === asset.id)?.observations || ""}>
+                      {lastInventory?.results?.find(r => r.assetId === asset.id)?.observations || "-"}
                     </TableCell>
                     <TableCell>
                       {activeSchedule ? (
@@ -934,29 +1016,11 @@ export default function AssetInventoryPage() {
                         <span className="text-sm text-muted-foreground">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right text-base">
-                      {asset.value ? Number(asset.value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : "-"}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {isAssignedToMe && activeSchedule ? (
-                        <Button 
-                          size="sm" 
-                          className="bg-orange-600 hover:bg-orange-700 text-white h-8 shadow-sm"
-                          onClick={() => setPerformingSchedule(activeSchedule)}
-                        >
-                          <PlayCircle className="w-4 h-4 mr-1" /> Realizar
-                        </Button>
-                      ) : (
-                        <Button variant="ghost" size="icon" title="Gerar Etiqueta">
-                          <QrCode className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </TableCell>
                   </TableRow>
                 )})}
                 {(!filteredAssets || filteredAssets.length === 0) && (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       Nenhum ativo encontrado.
                     </TableCell>
                   </TableRow>
@@ -1128,7 +1192,7 @@ export default function AssetInventoryPage() {
                  <TableRow>
                    <TableHead className="w-[60px] text-center bg-slate-50 sticky top-0 z-10 text-base">Status</TableHead>
                    <TableHead className="bg-slate-50 sticky top-0 z-10 text-base">Ativo</TableHead>
-                   <TableHead className="bg-slate-50 sticky top-0 z-10 text-base">Localização</TableHead>
+                   <TableHead className="bg-slate-50 sticky top-0 z-10 text-base w-[220px]">Localização</TableHead>
                    <TableHead className="bg-slate-50 sticky top-0 z-10 min-w-[150px] text-base">Obs</TableHead>
                  </TableRow>
                </TableHeader>
@@ -1163,7 +1227,11 @@ export default function AssetInventoryPage() {
                      <TableCell className="p-2 align-middle">
                         <div className="flex flex-col gap-1">
                             <span className="text-sm text-muted-foreground">
-                                {typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter || "-"}
+                                {(() => {
+                                   const ccCode = typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter;
+                                   const cc = costCenters.find(c => c.code === ccCode);
+                                   return cc ? `${cc.code} - ${cc.name}` : (ccCode || "-");
+                                })()}
                             </span>
                         <Select 
                           value={executionData[asset.id]?.costCenter || ""} 
@@ -1178,7 +1246,7 @@ export default function AssetInventoryPage() {
                           <SelectContent>
                             {costCenters?.map((cc: any) => (
                               <SelectItem key={cc.id} value={cc.code}>
-                                    {cc.code}
+                                    {cc.code} - {cc.name}
                               </SelectItem>
                             ))}
                           </SelectContent>

@@ -33,6 +33,7 @@ interface CostCenter {
   code: string;
   name: string;
   department: string;
+  responsible?: string;
 }
 
 interface AccountingAccount {
@@ -768,19 +769,19 @@ function CostCentersTab() {
     return () => unsubscribe();
   }, []);
 
-  const [form, setForm] = useState({ code: "", name: "", department: "" });
+  const [form, setForm] = useState({ code: "", name: "", department: "", responsible: "" });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleEdit = (cc: CostCenter) => {
-    setForm({ code: cc.code, name: cc.name, department: cc.department });
+    setForm({ code: cc.code, name: cc.name, department: cc.department, responsible: cc.responsible || "" });
     setEditingId(cc.id);
     setIsExpanded(true);
   };
 
   const cancelEdit = () => {
-    setForm({ code: "", name: "", department: "" });
+    setForm({ code: "", name: "", department: "", responsible: "" });
     setEditingId(null);
   };
 
@@ -830,6 +831,7 @@ function CostCentersTab() {
           code: String(row["Código Centro de Custo"] || "").trim(),
           name: String(row["Nome Centro de Custo"] || "").trim(),
           department: String(row["Departamento"] || "").trim(),
+          responsible: String(row["Responsável"] || "").trim(),
         })).filter(item => item.code && item.name && item.department);
 
         if (mappedData.length === 0) {
@@ -855,11 +857,11 @@ function CostCentersTab() {
   };
 
   const handleDownloadTemplate = () => {
-    const headers = ["Código Centro de Custo", "Nome Centro de Custo", "Departamento"];
-    const example = ["CC-001", "Administrativo", "Diretoria"];
+    const headers = ["Código Centro de Custo", "Nome Centro de Custo", "Departamento", "Responsável"];
+    const example = ["CC-001", "Administrativo", "Diretoria", "João Silva"];
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, example]);
-    ws['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 30 }];
+    ws['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 30 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(wb, ws, "Template");
     XLSX.writeFile(wb, "template_centros_custo.xlsx");
   };
@@ -905,17 +907,21 @@ function CostCentersTab() {
       {isExpanded && (
       <CardContent className="space-y-6">
         <form onSubmit={handleSubmit} className="flex gap-4 items-end bg-green-50 p-4 rounded-md border border-green-100">
-          <div className="w-1/4">
+          <div className="w-[15%]">
             <label className="text-base font-medium">Código</label>
             <Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} placeholder="Ex: CC-01" required />
           </div>
-          <div className="w-1/3">
+          <div className="w-[25%]">
             <label className="text-base font-medium">Nome</label>
             <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Ex: Administrativo" required />
           </div>
           <div className="flex-1">
             <label className="text-base font-medium">Departamento</label>
             <Input value={form.department} onChange={e => setForm({...form, department: e.target.value})} placeholder="Ex: Diretoria" required />
+          </div>
+          <div className="flex-1">
+            <label className="text-base font-medium">Responsável</label>
+            <Input value={form.responsible} onChange={e => setForm({...form, responsible: e.target.value})} placeholder="Ex: João Silva" />
           </div>
           <div className="flex gap-2">
             {editingId && (
@@ -939,6 +945,7 @@ function CostCentersTab() {
                 <TableHead className="text-base">Código</TableHead>
                 <TableHead className="text-base">Nome</TableHead>
                 <TableHead className="text-base">Departamento</TableHead>
+                <TableHead className="text-base">Responsável</TableHead>
                 <TableHead className="text-right text-base">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -948,6 +955,7 @@ function CostCentersTab() {
                   <TableCell className="font-mono text-base">{cc.code}</TableCell>
                   <TableCell>{cc.name}</TableCell>
                   <TableCell>{cc.department}</TableCell>
+                  <TableCell>{cc.responsible || "-"}</TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => handleEdit(cc)}>
                       <Pencil className="w-4 h-4 text-blue-500" />
