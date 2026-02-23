@@ -253,8 +253,8 @@ export default function AssetInventoryPage() {
     .filter(s => s.status === 'completed')
     .sort((a, b) => {
         const getDate = (d: any) => d?.toDate ? d.toDate() : new Date(d);
-        const dateA = a.approvedAt ? new Date(a.approvedAt).getTime() : getDate(a.date).getTime();
-        const dateB = b.approvedAt ? new Date(b.approvedAt).getTime() : getDate(b.date).getTime();
+        const dateA = a.approvedAt ? getDate(a.approvedAt).getTime() : getDate(a.date).getTime();
+        const dateB = b.approvedAt ? getDate(b.approvedAt).getTime() : getDate(b.date).getTime();
         return dateB - dateA;
     });
 
@@ -651,7 +651,8 @@ export default function AssetInventoryPage() {
         const dateObj = (schedule.date as any)?.toDate ? (schedule.date as any).toDate() : new Date(schedule.date);
         doc.text(`Data do Inventário: ${dateObj.toLocaleDateString('pt-BR')}`, pageWidth - 14, 24, { align: 'right' });
         doc.text(`Aprovado Por: ${schedule.approvedBy || "-"}`, pageWidth - 14, 29, { align: 'right' });
-        doc.text(`Data Aprovação: ${schedule.approvedAt ? new Date(schedule.approvedAt).toLocaleString('pt-BR') : "-"}`, pageWidth - 14, 34, { align: 'right' });
+        const approvedAtObj = (schedule.approvedAt as any)?.toDate ? (schedule.approvedAt as any).toDate() : (schedule.approvedAt ? new Date(schedule.approvedAt) : null);
+        doc.text(`Data Aprovação: ${approvedAtObj ? approvedAtObj.toLocaleString('pt-BR') : "-"}`, pageWidth - 14, 34, { align: 'right' });
 
         doc.setDrawColor(200);
         doc.line(14, 38, pageWidth - 14, 38);
@@ -1124,7 +1125,10 @@ export default function AssetInventoryPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-lg">{schedule.approvedBy || "-"}</TableCell>
-                  <TableCell className="text-lg">{schedule.approvedAt ? new Date(schedule.approvedAt).toLocaleString('pt-BR') : "-"}</TableCell>
+                  <TableCell className="text-lg">{schedule.approvedAt ? (() => {
+                      const d = (schedule.approvedAt as any)?.toDate ? (schedule.approvedAt as any).toDate() : new Date(schedule.approvedAt);
+                      return d.toLocaleString('pt-BR');
+                  })() : "-"}</TableCell>
                   <TableCell className="text-right">
                     <Button variant="outline" className="h-9 text-base px-4" onClick={() => handleExportScheduleResult(schedule)}>
                       <Download className="w-4 h-4 mr-2" />
