@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -22,7 +21,6 @@ import { useLocation, Link } from "wouter";
 export default function AssetsPage() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const utils = trpc.useUtils();
   const [projects, setProjects] = useState<any[]>([]);
 
   useEffect(() => {
@@ -53,6 +51,7 @@ export default function AssetsPage() {
   const [assets, setAssets] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [assetClasses, setAssetClasses] = useState<any[]>([]);
+  const [costCenters, setCostCenters] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -80,6 +79,14 @@ export default function AssetsPage() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "cost_centers"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCostCenters(data);
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Sync viewingAsset with real-time assets data to reflect depreciation updates
   useEffect(() => {
     if (viewOpen && viewingAsset) {
@@ -90,10 +97,6 @@ export default function AssetsPage() {
     }
   }, [assets, viewOpen, viewingAsset]);
 
-  const { data: accountingAccounts } = trpc.accounting.listAccounts.useQuery();
-  const { data: costCenters } = trpc.accounting.listCostCenters.useQuery();
-
-  const updateExpenseMutation = trpc.expenses.update.useMutation();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -151,9 +154,17 @@ export default function AssetsPage() {
     setViewOpen(true);
   };
 
-  const { data: nextAssetNumber } = trpc.assets.getNextNumber.useQuery(undefined, {
-    enabled: open && !formData.assetNumber,
-  });
+  const nextAssetNumber = useMemo(() => {
+    if (!assets || assets.length === 0) return "ATV-000001";
+    const numbers = assets
+      .map(a => a.assetNumber)
+      .filter(n => typeof n === 'string' && n.startsWith("ATV-"))
+      .map(n => parseInt(n.replace("ATV-", ""), 10))
+      .filter(n => !isNaN(n));
+    
+    const max = numbers.length > 0 ? Math.max(...numbers) : 0;
+    return `ATV-${String(max + 1).padStart(6, '0')}`;
+  }, [assets]);
 
   useEffect(() => {
     if (open && !formData.assetNumber && nextAssetNumber) {
@@ -234,7 +245,6 @@ export default function AssetsPage() {
       setFormData({ projectId: "", assetNumber: "", name: "", description: "", tagNumber: "", value: "", quantity: "1", startDate: new Date().toISOString().split("T")[0], notes: "", accountingAccount: "", assetClass: "", usefulLife: "", corporateUsefulLife: "", depreciationAccountCode: "", amortizationAccountCode: "", resultAccountCode: "", costCenter: "" });
       setEditingId(null);
       setOpen(false);
-      utils.assets.getNextNumber.invalidate(); // Atualiza a sequência para o próximo cadastro
       
       // If an asset was being viewed and it was the one just edited, update viewingAsset
       if (editingId && viewingAsset && viewingAsset.id === editingId) {
@@ -330,10 +340,7 @@ export default function AssetsPage() {
 
   const handleUnlinkItem = async (itemId: string) => {
     try {
-      await updateExpenseMutation.mutateAsync({
-        id: itemId,
-        assetId: null,
-      } as any);
+      await updateDoc(doc(db, "expenses", itemId), { assetId: null });
       toast.success("Despesa desvinculada do ativo!");
     } catch (error) {
       toast.error("Erro ao desvincular despesa.");
