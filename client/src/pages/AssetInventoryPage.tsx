@@ -684,19 +684,26 @@ export default function AssetInventoryPage() {
       const finalY = (doc as any).lastAutoTable.finalY + 40;
       
       doc.setDrawColor(0);
-      doc.line(20, finalY, 80, finalY);
-      doc.line(130, finalY, 190, finalY);
+      // Linhas de assinatura (3 colunas)
+      doc.line(15, finalY, 65, finalY);   // Solicitante
+      doc.line(80, finalY, 130, finalY);  // Responsável
+      doc.line(145, finalY, 195, finalY); // Aprovador
 
       // Assinatura do Solicitante
       let requester = users.find(u => String(u.id) === String(schedule.requesterId));
 
-      if (!requester && (String(schedule.requesterId) === String(currentUserId) || !schedule.requesterId)) {
+      // Prioriza o usuário logado se for o solicitante (garante dados da sessão atual)
+      if (String(schedule.requesterId) === String(currentUserId)) {
+        requester = user;
+      } 
+      // Fallback para agendamentos antigos sem solicitante (assume quem está gerando o relatório)
+      else if (!requester && !schedule.requesterId) {
         requester = user;
       }
 
       if (requester?.signature && requester.signature.startsWith('data:image')) {
         try {
-          doc.addImage(requester.signature, 'PNG', 30, finalY - 25, 40, 20);
+          doc.addImage(requester.signature, 'PNG', 20, finalY - 25, 40, 20);
         } catch (e) { console.warn("Erro ao adicionar assinatura do solicitante", e); }
       }
 
@@ -705,16 +712,26 @@ export default function AssetInventoryPage() {
       const responsible = users.find(u => String(u.id) === String(responsibleId));
       if (responsible?.signature && responsible.signature.startsWith('data:image')) {
         try {
-          doc.addImage(responsible.signature, 'PNG', 140, finalY - 25, 40, 20);
+          doc.addImage(responsible.signature, 'PNG', 85, finalY - 25, 40, 20);
         } catch (e) { console.warn("Erro ao adicionar assinatura do responsável", e); }
       }
       
-      doc.setFontSize(10);
+      // Assinatura do Aprovador
+      const approver = users.find(u => u.name === schedule.approvedBy);
+      if (approver?.signature && approver.signature.startsWith('data:image')) {
+        try {
+          doc.addImage(approver.signature, 'PNG', 150, finalY - 25, 40, 20);
+        } catch (e) { console.warn("Erro ao adicionar assinatura do aprovador", e); }
+      }
+      
+      doc.setFontSize(9);
       doc.setTextColor(0);
-      doc.text("Assinatura do Solicitante", 50, finalY + 5, { align: 'center' });
-      doc.text("Assinatura do Responsável", 160, finalY + 5, { align: 'center' });
-      doc.text(requester?.name || "Solicitante", 50, finalY + 10, { align: 'center' });
-      doc.text(responsible?.name || "Responsável", 160, finalY + 10, { align: 'center' });
+      doc.text("Solicitante", 40, finalY + 5, { align: 'center' });
+      doc.text("Responsável", 105, finalY + 5, { align: 'center' });
+      doc.text("Aprovador", 170, finalY + 5, { align: 'center' });
+      doc.text(requester?.name || "N/A", 40, finalY + 10, { align: 'center' });
+      doc.text(responsible?.name || "N/A", 105, finalY + 10, { align: 'center' });
+      doc.text(schedule.approvedBy || "N/A", 170, finalY + 10, { align: 'center' });
 
       doc.setFontSize(8);
       doc.setTextColor(100);
