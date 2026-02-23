@@ -185,12 +185,14 @@ export default function AssetInventoryPage() {
   const itemsPerPage = 10;
   const [showOnlyWithObs, setShowOnlyWithObs] = useState(false);
 
+  const getDate = (d: any) => d?.toDate ? d.toDate() : new Date(d);
+
   const getLastInventory = (assetId: string) => {
     return schedules
       .filter(s => s.status === 'completed' && s.results?.some(r => r.assetId === assetId))
       .sort((a, b) => {
-        const dateA = a.approvedAt ? new Date(a.approvedAt).getTime() : new Date(a.date).getTime();
-        const dateB = b.approvedAt ? new Date(b.approvedAt).getTime() : new Date(b.date).getTime();
+        const dateA = a.approvedAt ? getDate(a.approvedAt).getTime() : getDate(a.date).getTime();
+        const dateB = b.approvedAt ? getDate(b.approvedAt).getTime() : getDate(b.date).getTime();
         return dateB - dateA;
       })[0];
   };
@@ -252,7 +254,6 @@ export default function AssetInventoryPage() {
   const completedSchedules = schedules
     .filter(s => s.status === 'completed')
     .sort((a, b) => {
-        const getDate = (d: any) => d?.toDate ? d.toDate() : new Date(d);
         const dateA = a.approvedAt ? getDate(a.approvedAt).getTime() : getDate(a.date).getTime();
         const dateB = b.approvedAt ? getDate(b.approvedAt).getTime() : getDate(b.date).getTime();
         return dateB - dateA;
@@ -995,11 +996,8 @@ export default function AssetInventoryPage() {
                               </span>
                               <span className="text-xs text-muted-foreground">
                                 {lastInventory.approvedAt 
-                                  ? new Date(lastInventory.approvedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
-                                  : (() => {
-                                      const d = (lastInventory.date as any)?.toDate ? (lastInventory.date as any).toDate() : new Date(lastInventory.date);
-                                      return d.toLocaleDateString('pt-BR');
-                                    })()}
+                                  ? getDate(lastInventory.approvedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+                                  : getDate(lastInventory.date).toLocaleDateString('pt-BR')}
                               </span>
                             </div>
                           );

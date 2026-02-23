@@ -156,6 +156,7 @@ export default function ReportsPage() {
 
   // Garante a leitura do ID independente do formato do objeto user
   const currentUserId = (user as any)?.id || (user as any)?.openId || (user as any)?.uid || (user as any)?.sub;
+  const userRole = (user as any)?.role;
 
   const handleApproveInventory = async (schedule: InventorySchedule) => {
     if (!schedule.results) return;
@@ -187,7 +188,12 @@ export default function ReportsPage() {
 
   // Filtra agendamentos concluídos para histórico
   const completedSchedules = schedules.filter(s => 
-    s.status === 'completed' && (!s.requesterId || String(s.requesterId) === String(currentUserId))
+    s.status === 'completed' && (
+      userRole === 'admin' || 
+      userRole === 'diretoria' || 
+      !s.requesterId || 
+      String(s.requesterId) === String(currentUserId)
+    )
   );
 
   const schedulesByDate = useMemo(() => {
