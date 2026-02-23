@@ -758,6 +758,7 @@ function AssetClassesTab() {
 
 function CostCentersTab() {
   const [centers, setCenters] = useState<CostCenter[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -765,6 +766,14 @@ function CostCentersTab() {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CostCenter));
       setCenters(data);
       setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(data);
     });
     return () => unsubscribe();
   }, []);
@@ -922,6 +931,16 @@ function CostCentersTab() {
           <div className="flex-1">
             <label className="text-base font-medium">Responsável</label>
             <Input value={form.responsible} onChange={e => setForm({...form, responsible: e.target.value})} placeholder="Ex: João Silva" />
+            <Select value={form.responsible} onValueChange={(v) => setForm({...form, responsible: v})}>
+              <SelectTrigger className="bg-white">
+                <SelectValue placeholder="Selecione" />
+              </SelectTrigger>
+              <SelectContent>
+                {users.map((u) => (
+                  <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex gap-2">
             {editingId && (

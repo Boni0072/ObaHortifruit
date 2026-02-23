@@ -7,10 +7,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Pencil, Plus, Trash2, Shield, AlertTriangle } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2, Shield, AlertTriangle, Download, Upload, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import * as XLSX from "xlsx";
 
 // Definição dos perfis solicitados
 export const ROLES = [
@@ -50,6 +51,8 @@ export default function UserPage() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showSignatureCanvas, setShowSignatureCanvas] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
   
   // Estado do formulário
   const [formData, setFormData] = useState({
@@ -212,17 +215,148 @@ export default function UserPage() {
       }, 0);
   };
 
+  const handleDownloadTemplate = () => {
+    const headers = ["Nome", "Email", "Perfil", "Páginas Permitidas (IDs separados por vírgula)"];
+    const example = ["João Silva", "joao@empresa.com", "engenharia", "dashboard,projects,assets"];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+    
+    ws['!cols'] = [{ wch: 30 }, { wch: 30 }, { wch: 15 }, { wch: 50 }];
+    
+    XLSX.utils.book_append_sheet(wb, ws, "Template Usuários");
+
+    // Adiciona aba de referência com IDs
+    const refHeaders = ["ID da Página", "Descrição da Página", "", "ID do Perfil", "Descrição do Perfil"];
+    const refData = [];
+    const maxLen = Math.max(AVAILABLE_PAGES.length, ROLES.length);
+
+    for (let i = 0; i < maxLen; i++) {
+      const page = AVAILABLE_PAGES[i];
+      const role = ROLES[i];
+      refData.push([
+        page ? page.id : "",
+        page ? page.label : "",
+        "",
+        role ? role.value : "",
+        role ? role.label : ""
+      ]);
+    }
+    const wsRef = XLSX.utils.aoa_to_sheet([refHeaders, ...refData]);
+    wsRef['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 5 }, { wch: 20 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, wsRef, "IDs de Referência");
+
+    XLSX.writeFile(wb, "template_importacao_usuarios.xlsx");
+  };
+
+  const handleSendCollectionRequest = (user: any) => {
+    const subject = "Solicitação de Cadastro de Senha e Assinatura - Sistema de Obras";
+    const link = `${window.location.origin}/login?setup=true&email=${encodeURIComponent(user.email)}`;
+    const body = `Olá ${user.name},
+
+Por favor, acesse o sistema para cadastrar sua senha e sua assinatura digital.
+
+Link: ${link}
+
+Atenciosamente,
+Equipe de Obras`;
+
+    window.location.href = `mailto:${user.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    toast.success(`Cliente de e-mail aberto para ${user.name}`);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(worksheet);
+
+        if (json.length === 0) {
+          toast.error("O arquivo está vazio.");
+          setIsImporting(false);
+          return;
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        const promises = json.map(async (row: any) => {
+            try {
+                const name = row["Nome"];
+                const email = row["Email"];
+                const role = row["Perfil"]?.toLowerCase();
+                const allowedPagesStr = row["Páginas Permitidas (IDs separados por vírgula)"];
+
+                if (!name || !email) throw new Error("Nome e Email são obrigatórios");
+
+                let allowedPages: string[] = [];
+                if (allowedPagesStr) {
+                    allowedPages = String(allowedPagesStr).split(',').map(p => p.trim());
+                }
+
+                await addDoc(collection(db, "users"), {
+                    name,
+                    email,
+                    role: role || "engenharia",
+                    allowedPages,
+                    createdAt: new Date().toISOString()
+                });
+                successCount++;
+            } catch (err) {
+                console.error(err);
+                errorCount++;
+            }
+        });
+
+        await Promise.all(promises);
+        if (successCount > 0) toast.success(`${successCount} usuários importados!`);
+        if (errorCount > 0) toast.error(`${errorCount} falhas na importação.`);
+        
+      } catch (error) {
+        console.error("Erro na importação:", error);
+        toast.error("Erro ao processar o arquivo.");
+      } finally {
+        setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-slate-700">Gerenciamento de Usuários</h1>
-        <Dialog open={open} onOpenChange={handleOpenChange}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus size={20} />
-              Novo Usuário
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleDownloadTemplate}>
+            <Download className="mr-2 h-4 w-4" />
+            Template
+          </Button>
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isImporting}>
+            {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+            Importar
+          </Button>
+          <Input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            onChange={handleFileUpload}
+            accept=".xlsx, .xls"
+          />
+          <Dialog open={open} onOpenChange={handleOpenChange}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus size={20} />
+                Novo Usuário
+              </Button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
               <DialogTitle>{editingId ? "Editar Usuário" : "Novo Usuário"}</DialogTitle>
@@ -344,6 +478,7 @@ export default function UserPage() {
           </DialogContent>
         </Dialog>
       </div>
+      </div>
 
       <Card className="p-0 overflow-hidden">
         <div className="p-6 border-b">
@@ -397,6 +532,15 @@ export default function UserPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleSendCollectionRequest(user)}
+                        title="Enviar link para coleta de Senha e Assinatura"
+                      >
+                        <Mail size={16} className="text-slate-500 hover:text-orange-600" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"

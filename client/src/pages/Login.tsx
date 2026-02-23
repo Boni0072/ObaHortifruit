@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, updateDoc, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, LogIn } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Loader2, LogIn, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Login() {
@@ -14,6 +15,85 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Estados para o fluxo de Setup (Senha e Assinatura)
+  const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const [setupEmail, setSetupEmail] = useState("");
+  const [setupPassword, setSetupPassword] = useState("");
+  const [setupSignature, setSetupSignature] = useState("");
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("setup") === "true" && params.get("email")) {
+      setSetupEmail(params.get("email") || "");
+      setIsSetupOpen(true);
+    }
+  }, []);
+
+  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement) => {
+    let clientX, clientY;
+    if ('touches' in e) {
+      const touch = (e as React.TouchEvent<HTMLCanvasElement>).touches[0];
+      clientX = touch.clientX;
+      clientY = touch.clientY;
+    } else {
+      const mouse = e as React.MouseEvent<HTMLCanvasElement>;
+      clientX = mouse.clientX;
+      clientY = mouse.clientY;
+    }
+    const rect = canvas.getBoundingClientRect();
+    return {
+      offsetX: clientX - rect.left,
+      offsetY: clientY - rect.top
+    };
+  };
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    setIsDrawing(true);
+    const { offsetX, offsetY } = getCoordinates(e, canvas);
+    ctx.beginPath();
+    ctx.moveTo(offsetX, offsetY);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#000';
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const { offsetX, offsetY } = getCoordinates(e, canvas);
+    ctx.lineTo(offsetX, offsetY);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    const canvas = canvasRef.current;
+    if (canvas) {
+        setSetupSignature(canvas.toDataURL());
+    }
+  };
+
+  const clearSignature = () => {
+      setSetupSignature("");
+      const canvas = canvasRef.current;
+      if (canvas) {
+          const ctx = canvas.getContext("2d");
+          ctx?.clearRect(0, 0, canvas.width, canvas.height);
+      }
+  };
 
   // Helper para criar token JWT fake compatível com o backend em desenvolvimento
   const createMockToken = (user: { id: string; email: string; name: string }) => {
@@ -96,6 +176,42 @@ export default function Login() {
     }
   };
 
+  const handleSetupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!setupPassword || setupPassword.length < 6) {
+      toast.error("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    if (!setupSignature) {
+      toast.error("A assinatura é obrigatória.");
+      return;
+    }
+
+    try {
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("email", "==", setupEmail));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        toast.error("Usuário não encontrado.");
+        return;
+      }
+
+      const userDoc = querySnapshot.docs[0];
+      await updateDoc(doc(db, "users", userDoc.id), {
+        password: setupPassword,
+        signature: setupSignature
+      });
+
+      toast.success("Senha e assinatura cadastradas com sucesso! Faça login para continuar.");
+      setIsSetupOpen(false);
+      window.history.replaceState({}, document.title, "/login");
+    } catch (error) {
+      console.error("Erro ao salvar:", error);
+      toast.error("Erro ao salvar dados.");
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-900 relative overflow-hidden">
       {/* Background Elements */}
@@ -169,6 +285,61 @@ export default function Login() {
           </CardFooter>
         </form>
       </Card>
+
+      <Dialog open={isSetupOpen} onOpenChange={setIsSetupOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Configuração de Conta</DialogTitle>
+            <DialogDescription>
+              Defina sua senha de acesso e desenhe sua assinatura digital para aprovações.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSetupSubmit} className="space-y-4">
+            <div>
+              <Label>Email</Label>
+              <Input value={setupEmail} disabled className="bg-slate-100" />
+            </div>
+            <div>
+              <Label>Nova Senha</Label>
+              <Input 
+                type="password" 
+                value={setupPassword} 
+                onChange={(e) => setSetupPassword(e.target.value)} 
+                placeholder="Mínimo 6 caracteres"
+                required
+                minLength={6}
+              />
+            </div>
+            <div>
+              <Label className="mb-2 block">Assinatura Digital</Label>
+              <div className="border rounded-md bg-white overflow-hidden shadow-sm relative">
+                <canvas
+                  ref={canvasRef}
+                  width={450}
+                  height={150}
+                  className="w-full h-[150px] cursor-crosshair touch-none bg-white"
+                  onMouseDown={startDrawing}
+                  onMouseMove={draw}
+                  onMouseUp={stopDrawing}
+                  onMouseLeave={stopDrawing}
+                  onTouchStart={startDrawing}
+                  onTouchMove={draw}
+                  onTouchEnd={stopDrawing}
+                />
+                <div className="bg-slate-50 border-t p-2 flex justify-between items-center text-xs text-muted-foreground">
+                  <span>Desenhe sua assinatura acima</span>
+                  <Button type="button" variant="ghost" size="sm" onClick={clearSignature} className="text-red-500 hover:text-red-700 hover:bg-red-50">
+                    <Trash2 className="w-3 h-3 mr-1" /> Limpar
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="submit" className="w-full">Salvar e Continuar</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

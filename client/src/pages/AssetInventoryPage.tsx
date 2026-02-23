@@ -172,6 +172,7 @@ export default function AssetInventoryPage() {
   // Schedule Form State
   const [scheduleDate, setScheduleDate] = useState(new Date().toISOString().split("T")[0]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [selectedApproverId, setSelectedApproverId] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
   const [selectedCostCenter, setSelectedCostCenter] = useState("all");
@@ -239,6 +240,26 @@ export default function AssetInventoryPage() {
   // Garante a leitura do ID independente do formato do objeto user (id, uid, openId, sub)
   const currentUserId = (user as any)?.id || (user as any)?.openId || (user as any)?.uid || (user as any)?.sub;
   const userRole = (user as any)?.role;
+
+  useEffect(() => {
+    if (isScheduleOpen) {
+      let responsibleId = "";
+      
+      if (selectedAssetIds.length > 0) {
+        const asset = assets.find(a => a.id === selectedAssetIds[0]);
+        if (asset) {
+          const ccCode = typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter;
+          const costCenter = costCenters.find(c => c.code === ccCode);
+          if (costCenter?.responsible) {
+            const userFound = users.find(u => u.name?.trim().toLowerCase() === costCenter.responsible?.trim().toLowerCase());
+            if (userFound) responsibleId = userFound.id;
+          }
+        }
+      }
+      
+      setSelectedApproverId(responsibleId || currentUserId || "");
+    }
+  }, [isScheduleOpen, currentUserId, selectedAssetIds, assets, costCenters, users]);
 
   const myPendingSchedules = schedules.filter(s => 
     s.status === 'pending' && currentUserId && s.userIds.some(uid => String(uid) === String(currentUserId))
@@ -518,6 +539,7 @@ export default function AssetInventoryPage() {
     // O ID será gerado automaticamente pelo Firestore
     const newScheduleData = {
       requesterId: currentUserId,
+      requesterId: selectedApproverId || currentUserId,
       assetIds: selectedAssetIds,
       userIds: selectedUserIds,
       date: scheduleDate,
@@ -536,6 +558,7 @@ export default function AssetInventoryPage() {
     setIsScheduleOpen(false);
     setSelectedAssetIds([]);
     setSelectedUserIds([]);
+    setSelectedApproverId("");
     setNotes("");
   };
 
@@ -783,6 +806,19 @@ export default function AssetInventoryPage() {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label>Aprovador</Label>
+                    <Select value={selectedApproverId} onValueChange={setSelectedApproverId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o aprovador" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {users.map((u: any) => (
+                          <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="col-span-2 space-y-2">
                     <Label>Observações</Label>
                     <Input 
                       placeholder="Ex: Conferência anual..." 
