@@ -713,16 +713,8 @@ export default function AssetInventoryPage() {
       doc.line(145, finalY, 195, finalY); // Aprovador
 
       // Assinatura do Solicitante
-      let requester = users.find(u => String(u.id) === String(schedule.requesterId));
-
-      // Prioriza o usuário logado se for o solicitante (garante dados da sessão atual)
-      if (String(schedule.requesterId) === String(currentUserId)) {
-        requester = user;
-      } 
-      // Fallback para agendamentos antigos sem solicitante (assume quem está gerando o relatório)
-      else if (!requester && !schedule.requesterId) {
-        requester = user;
-      }
+      // O solicitante no PDF será sempre o usuário logado que está gerando o relatório
+      const requester = users.find(u => String(u.id) === String(currentUserId)) || user;
 
       if (requester?.signature && requester.signature.startsWith('data:image')) {
         try {
@@ -756,9 +748,18 @@ export default function AssetInventoryPage() {
       doc.text(responsible?.name || "N/A", 105, finalY + 10, { align: 'center' });
       doc.text(schedule.approvedBy || "N/A", 170, finalY + 10, { align: 'center' });
 
-      doc.setFontSize(8);
+      doc.setFontSize(7);
       doc.setTextColor(100);
-      // Datas já estão no cabeçalho
+      
+      const formatDate = (d: any) => {
+        if (!d) return "-";
+        const dateObj = d?.toDate ? d.toDate() : new Date(d);
+        return dateObj.toLocaleString('pt-BR');
+      };
+
+      doc.text(formatDate(schedule.createdAt || schedule.date), 40, finalY + 15, { align: 'center' });
+      doc.text(formatDate(schedule.approvedAt), 105, finalY + 15, { align: 'center' }); // Responsável usa data de aprovação como conclusão
+      doc.text(formatDate(schedule.approvedAt), 170, finalY + 15, { align: 'center' });
 
       doc.save(`inventario_concluido_${dateObj.toISOString().split('T')[0]}.pdf`);
       toast.success("Relatório PDF gerado com sucesso!");

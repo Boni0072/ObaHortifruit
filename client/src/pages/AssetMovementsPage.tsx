@@ -21,8 +21,7 @@ export default function AssetMovementsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-
-  const { data: costCenters } = trpc.accounting.listCostCenters.useQuery();
+  const [costCenters, setCostCenters] = useState<any[]>([]);
 
   // Buscar Ativos
   useEffect(() => {
@@ -43,6 +42,14 @@ export default function AssetMovementsPage() {
     return () => unsubscribe();
   }, []);
 
+  // Buscar Centros de Custo
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "cost_centers"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCostCenters(data);
+    });
+    return () => unsubscribe();
+  }, []);
   // Buscar Histórico de Movimentações
   useEffect(() => {
     const q = query(collection(db, "asset_movements"), orderBy("date", "desc"));
