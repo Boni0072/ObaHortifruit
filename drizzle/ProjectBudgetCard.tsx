@@ -35,7 +35,7 @@ export function ProjectBudgetCard({ project, assets, budgets }: ProjectBudgetCar
             <p className="font-semibold text-green-600 text-lg">{formatCurrency(budgetRealizado)}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Variação</p>
+            <p className="text-xs text-gray-500">Disponível</p>
             <p className={`font-semibold text-lg ${budgetVariacao >= 0 ? 'text-foreground' : 'text-red-600'}`}>{formatCurrency(budgetVariacao)}</p>
           </div>
           <div>

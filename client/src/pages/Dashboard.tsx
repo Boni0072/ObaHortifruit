@@ -4,9 +4,10 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, TrendingUp, DollarSign, Package, Activity, BarChart3, ArrowUpRight, AlertTriangle, TrendingDown, Target, Wallet, X, ChevronDown, ChevronRight, ClipboardList, Calendar, CheckCircle2, Clock, FileText } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, Package, Activity, BarChart3, ArrowUpRight, AlertTriangle, TrendingDown, Target, Wallet, X, ChevronDown, ChevronRight, ClipboardList, Calendar, CheckCircle2, Clock, FileText, ChevronLeft } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useLocation } from "wouter";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", {
@@ -44,6 +45,9 @@ export default function Dashboard() {
   const [isInventoryDataExpanded, setIsInventoryDataExpanded] = useState(false);
   const [isAssetsExpanded, setIsAssetsExpanded] = useState(false);
   const [isScheduleAnalysisExpanded, setIsScheduleAnalysisExpanded] = useState(false);
+  const [selectedMonthDrilldown, setSelectedMonthDrilldown] = useState<{ monthIndex: number, year: number, schedules: any[] } | null>(null);
+  const [selectedDayDrilldown, setSelectedDayDrilldown] = useState<{ day: number, schedules: any[] } | null>(null);
+  const [selectedStatusDrilldown, setSelectedStatusDrilldown] = useState<{ status: string, assets: any[] } | null>(null);
 
   const [projects, setProjects] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -51,6 +55,7 @@ export default function Dashboard() {
   const [assets, setAssets] = useState<any[]>([]);
   const [allBudgets, setAllBudgets] = useState<any[]>([]);
   const [assetClasses, setAssetClasses] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -72,6 +77,9 @@ export default function Dashboard() {
     const unsubSchedules = onSnapshot(collection(db, "inventory_schedules"), (snapshot) => {
       setSchedules(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
+    const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
+      setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
 
     // Pequeno delay para garantir que o loading não pisque muito rápido ou fique preso
     const timer = setTimeout(() => setIsLoading(false), 800);
@@ -83,6 +91,7 @@ export default function Dashboard() {
       unsubBudgets();
       unsubAssetClasses();
       unsubSchedules();
+      unsubUsers();
       clearTimeout(timer);
     };
   }, []);
@@ -1309,7 +1318,7 @@ export default function Dashboard() {
                                                 const d = parseDate(s.date);
                                                 return d.getFullYear() === currentYear && d.getMonth() === monthIndex;
                                             }).length;
-                                            return { name: monthName.charAt(0).toUpperCase() + monthName.slice(1), value: count };
+                                            return { name: monthName.charAt(0).toUpperCase() + monthName.slice(1), value: count, monthIndex };
                                         });
                                     })()}
                                     margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
@@ -1321,7 +1330,21 @@ export default function Dashboard() {
                                         cursor={{ fill: '#f1f5f9' }}
                                         contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                     />
-                                    <Bar dataKey="value" name="Agendamentos" fill="#8b5cf6" radius={[4, 4, 0, 0]}>
+                                    <Bar 
+                                        dataKey="value" 
+                                        name="Agendamentos" 
+                                        fill="#8b5cf6" 
+                                        radius={[4, 4, 0, 0]}
+                                        cursor="pointer"
+                                        onClick={(data) => {
+                                            const currentYear = new Date().getFullYear();
+                                            const monthSchedules = schedules.filter(s => {
+                                                const d = parseDate(s.date);
+                                                return d.getFullYear() === currentYear && d.getMonth() === data.monthIndex;
+                                            });
+                                            setSelectedMonthDrilldown({ monthIndex: data.monthIndex, year: currentYear, schedules: monthSchedules });
+                                        }}
+                                    >
                                         <LabelList dataKey="value" position="top" style={{ fill: '#64748b', fontSize: 12 }} formatter={(val: number) => val > 0 ? val : ''} />
                                     </Bar>
                                 </BarChart>
@@ -1351,6 +1374,7 @@ export default function Dashboard() {
                                         outerRadius={80}
                                         paddingAngle={5}
                                         dataKey="value"
+                                        label={({ value }) => value}
                                     >
                                         {([
                                             { name: 'Concluído', value: completedSchedules, color: '#22c55e' },
@@ -1506,6 +1530,149 @@ export default function Dashboard() {
                 </div>
             </div>
         )}
+
+      {/* Modal de Drill-down (Detalhes do Mês e Dia) */}
+      <Dialog open={!!selectedMonthDrilldown} onOpenChange={(open) => {
+        if (!open) {
+            setSelectedMonthDrilldown(null);
+            setSelectedDayDrilldown(null);
+            setSelectedStatusDrilldown(null);
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                    {selectedDayDrilldown && (
+                        <Button variant="ghost" size="icon" onClick={() => setSelectedDayDrilldown(null)} className="h-8 w-8">
+                            <ChevronLeft className="h-5 w-5" />
+                        </Button>
+                    )}
+                    {selectedStatusDrilldown
+                        ? `Ativos com Status: ${selectedStatusDrilldown.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`
+                        : selectedDayDrilldown 
+                        ? `Ativos por Status - ${selectedDayDrilldown.day}/${selectedMonthDrilldown?.monthIndex! + 1}/${selectedMonthDrilldown?.year}`
+                        : `Agendamentos de ${new Date(selectedMonthDrilldown?.year || 0, selectedMonthDrilldown?.monthIndex || 0, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}`
+                    }
+                </DialogTitle>
+            </DialogHeader>
+            
+            <div className="w-full mt-4">
+                {selectedStatusDrilldown ? (
+                    <div className="h-full overflow-y-auto border rounded-md">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Nome do Ativo</TableHead>
+                                    <TableHead>Nº Ativo</TableHead>
+                                    <TableHead>Nº Plaqueta</TableHead>
+                                    <TableHead>Responsável</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {selectedStatusDrilldown.assets.map(asset => (
+                                    <TableRow key={asset.id}>
+                                        <TableCell>{asset.name}</TableCell>
+                                        <TableCell>{asset.assetNumber || '-'}</TableCell>
+                                        <TableCell>{asset.tagNumber || '-'}</TableCell>
+                                        <TableCell>
+                                            {(() => {
+                                                const schedule = selectedDayDrilldown?.schedules.find(s => s.assetIds.includes(asset.id));
+                                                if (!schedule) return '-';
+                                                return schedule.userIds.map((uid: string) => users.find(u => u.id === uid)?.name).filter(Boolean).join(', ');
+                                            })()}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </div>
+                ) : selectedDayDrilldown ? (
+                    <div className="space-y-8">
+                        <div className="h-[400px] w-full">
+                        <h4 className="text-sm font-semibold text-slate-700 mb-4">Status dos Ativos</h4>
+                        <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                            data={(() => {
+                                const assetIds = selectedDayDrilldown.schedules.flatMap(s => s.assetIds);
+                                const dayAssets = assets.filter(a => assetIds.includes(a.id));
+                                const statusCounts: Record<string, number> = {};
+                                dayAssets.forEach(a => {
+                                    const status = a.status || 'sem_status';
+                                    statusCounts[status] = (statusCounts[status] || 0) + 1;
+                                });
+                                return Object.entries(statusCounts).map(([status, count]) => ({
+                                    name: status,
+                                    displayName: status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                                    value: count,
+                                    fill: STATUS_COLORS[status] || '#94a3b8'
+                                })).sort((a, b) => b.value - a.value);
+                            })()}
+                            layout="vertical"
+                            margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+                        >
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                            <XAxis type="number" hide />
+                            <YAxis dataKey="displayName" type="category" width={150} tick={{ fill: '#64748b', fontSize: 12 }} />
+                            <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                            <Bar 
+                                dataKey="value" 
+                                name="Ativos" 
+                                radius={[0, 4, 4, 0]}
+                                cursor="pointer"
+                                onClick={(data) => {
+                                    const assetIds = selectedDayDrilldown.schedules.flatMap(s => s.assetIds);
+                                    const dayAssets = assets.filter(a => assetIds.includes(a.id));
+                                    const statusAssets = dayAssets.filter(a => (a.status || 'sem_status') === data.name);
+                                    setSelectedStatusDrilldown({ status: data.name, assets: statusAssets });
+                                }}
+                            >
+                                <LabelList dataKey="value" position="right" style={{ fill: '#64748b', fontSize: 12 }} />
+                                <Cell fill={(entry: any) => entry.fill} /> 
+                            </Bar>
+                        </BarChart>
+                        </ResponsiveContainer>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="h-[400px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                            data={(() => {
+                                if (!selectedMonthDrilldown) return [];
+                                const daysInMonth = new Date(selectedMonthDrilldown.year, selectedMonthDrilldown.monthIndex + 1, 0).getDate();
+                                return Array.from({ length: daysInMonth }, (_, i) => {
+                                    const day = i + 1;
+                                    const daySchedules = selectedMonthDrilldown.schedules.filter(s => parseDate(s.date).getDate() === day);
+                                    return { name: day.toString(), value: daySchedules.length, day, schedules: daySchedules };
+                                });
+                            })()}
+                            margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
+                        >
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                            <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} allowDecimals={false} />
+                            <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                            <Bar 
+                                dataKey="value" 
+                                name="Agendamentos" 
+                                fill="#3b82f6" 
+                                radius={[4, 4, 0, 0]}
+                                cursor="pointer"
+                                onClick={(data) => {
+                                    if (data && data.value > 0) {
+                                        setSelectedDayDrilldown({ day: data.day, schedules: data.schedules });
+                                    }
+                                }}
+                            >
+                                <LabelList dataKey="value" position="top" style={{ fill: '#64748b', fontSize: 12 }} formatter={(val: number) => val > 0 ? val : ''} />
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                    </div>
+                )}
+            </div>
+        </DialogContent>
+      </Dialog>
       </div>
       )}
     </div>

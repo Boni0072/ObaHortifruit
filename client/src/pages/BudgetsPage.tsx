@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 
-import { Loader2, ChevronDown, ChevronRight, Plus, CheckCircle2, ArrowRight, AlertTriangle, Check, XCircle, Download, Upload } from "lucide-react";
+import { Loader2, ChevronDown, ChevronRight, Plus, CheckCircle2, ArrowRight, AlertTriangle, Check, XCircle, Download, Upload, QrCode, X } from "lucide-react";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", {
@@ -518,6 +518,9 @@ function ExpenseRow({ expense, accountingAccounts, assets, onSave, onOpenCreateA
   return (
     <tr key={`expense-${expense.id}`}>
       <td className="border border-slate-300 px-3 py-2">{expense.description}</td>
+      <td className="border border-slate-300 px-3 py-2 font-mono text-xs text-muted-foreground">
+        {expense.notes?.match(/NF-e:\s*(\d{44})/)?.[1] || "-"}
+      </td>
       <td className="border border-slate-300 px-3 py-2">
         {type === 'opex' ? (
           <Select
@@ -800,6 +803,7 @@ function ProjectBudgetRow({ project, onDataLoaded }: { project: ProjectType, onD
                       <thead className="bg-gray-100">
                         <tr>
                           <th className="border border-slate-300 px-3 py-2 font-medium text-gray-600 text-left">Descrição</th>
+                          <th className="border border-slate-300 px-3 py-2 font-medium text-gray-600 text-left">Nota Fiscal</th>
                           <th className="border border-slate-300 px-3 py-2 font-medium text-gray-600 text-left">Conta Contábil</th>
                           <th className="border border-slate-300 px-3 py-2 font-medium text-gray-600 text-left">Ativo</th>
                           <th className="border border-slate-300 px-3 py-2 font-medium text-gray-600 text-left">Classificação</th>
@@ -829,7 +833,7 @@ function ProjectBudgetRow({ project, onDataLoaded }: { project: ProjectType, onD
                       </tbody>
                       <tfoot className="bg-gray-50 font-bold">
                         <tr>
-                          <td colSpan={4} className="border border-slate-300 px-3 py-2 text-right">Total Acumulado</td>
+                          <td colSpan={5} className="border border-slate-300 px-3 py-2 text-right">Total Acumulado</td>
                           <td className="border border-slate-300 px-3 py-2 text-right font-mono">{formatCurrency(budgetRealizado)}</td>
                           <td className="border border-slate-300 px-3 py-2"></td>
                         </tr>
@@ -983,6 +987,60 @@ export default function BudgetsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [viewProject, setViewProject] = useState<any | null>(null);
 
+  const [isScanning, setIsScanning] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let interval: NodeJS.Timeout;
+
+    if (isScanning) {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(s => {
+          stream = s;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.play().catch(console.error);
+          }
+
+          if ('BarcodeDetector' in window) {
+             try {
+                 // @ts-ignore
+                 const detector = new window.BarcodeDetector({ formats: ['qr_code', 'code_128', 'ean_13', 'itf'] });
+                 interval = setInterval(async () => {
+                    if (videoRef.current && videoRef.current.readyState === 4) {
+                        try {
+                            const barcodes = await detector.detect(videoRef.current);
+                            if (barcodes.length > 0) {
+                                const rawValue = barcodes[0].rawValue;
+                                const match = rawValue.match(/\d{44}/);
+                                if (match) {
+                                    setNfeKey(match[0]);
+                                    setIsScanning(false);
+                                    toast.success("Chave da NF-e lida com sucesso!");
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                 }, 500);
+             } catch (e) { console.warn("BarcodeDetector error", e); }
+          }
+        })
+        .catch(err => {
+          console.error("Erro câmera", err);
+          toast.error("Erro ao acessar câmera.");
+          setIsScanning(false);
+        });
+    }
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+      if (interval) clearInterval(interval);
+    };
+  }, [isScanning]);
+
   const steps = [
     { id: 'aguardando_classificacao', label: 'Classificação', color: 'bg-blue-500', border: 'border-blue-500', text: 'text-blue-600', ring: 'ring-blue-200' },
     { id: 'aguardando_engenharia', label: 'Engenharia', color: 'bg-yellow-500', border: 'border-yellow-500', text: 'text-yellow-600', ring: 'ring-yellow-200' },
@@ -1013,6 +1071,7 @@ export default function BudgetsPage() {
 
   const totalPlanned = filteredProjects?.reduce((acc, p) => acc + (totals[String(p.id)]?.planned || 0), 0) || 0;
   const totalRealized = filteredProjects?.reduce((acc, p) => acc + (totals[String(p.id)]?.realized || 0), 0) || 0;
+  const totalAvailable = totalPlanned - totalRealized;
 
   // --- Nova Despesa Logic ---
   const [openExpenseDialog, setOpenExpenseDialog] = useState(false);
@@ -1316,12 +1375,25 @@ export default function BudgetsPage() {
                 <div className="space-y-2 p-4 border rounded-lg bg-slate-50">
                   <label className="text-sm font-medium">Importar da NF-e (Opcional)</label>
                   <div className="flex gap-2">
-                    <Input
-                      value={nfeKey}
-                      onChange={(e) => setNfeKey(e.target.value.replace(/\D/g, ''))}
-                      placeholder="Digite os 44 dígitos da chave de acesso"
-                      maxLength={44}
-                    />
+                    <div className="relative flex-1">
+                      <Input
+                        value={nfeKey}
+                        onChange={(e) => setNfeKey(e.target.value.replace(/\D/g, ''))}
+                        placeholder="Digite os 44 dígitos da chave de acesso"
+                        maxLength={44}
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-10 w-10 text-muted-foreground hover:text-foreground"
+                        onClick={() => setIsScanning(true)}
+                        title="Escanear Código de Barras"
+                      >
+                        <QrCode className="h-5 w-5" />
+                      </Button>
+                    </div>
                     <Button
                       type="button"
                       variant="secondary"
@@ -1556,6 +1628,23 @@ export default function BudgetsPage() {
           </DialogContent>
         </Dialog>
         </div>
+
+      {isScanning && (
+        <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+            <div className="relative flex-1 bg-black flex items-center justify-center">
+                <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+                <div className="absolute inset-0 border-2 border-white/50 m-12 rounded-lg pointer-events-none"></div>
+                <div className="absolute top-4 right-4 z-[101]">
+                    <Button variant="ghost" size="icon" className="text-white bg-black/50 hover:bg-black/70 rounded-full" onClick={() => setIsScanning(false)}>
+                        <X className="h-8 w-8" />
+                    </Button>
+                </div>
+                <div className="absolute bottom-20 left-0 right-0 flex justify-center">
+                    <p className="text-white bg-black/50 px-4 py-2 rounded">Aponte para o código de barras da NF-e</p>
+                </div>
+            </div>
+        </div>
+      )}
       </div>
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -1582,6 +1671,11 @@ export default function BudgetsPage() {
               <p className="text-xs text-gray-500 font-medium uppercase">Total Realizado</p>
               <p className="text-lg font-bold text-slate-700">{formatCurrency(totalRealized)}</p>
            </div>
+           <div className="w-px bg-gray-200"></div>
+           <div>
+              <p className="text-xs text-gray-500 font-medium uppercase">Disponível</p>
+              <p className={`text-lg font-bold ${totalAvailable >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(totalAvailable)}</p>
+           </div>
         </div>
       </div>
 
@@ -1603,7 +1697,7 @@ export default function BudgetsPage() {
                   <th className="px-4 py-2 font-medium text-gray-600">Status</th>
                   <th className="px-4 py-2 font-medium text-gray-600 text-right">Planejado</th>
                   <th className="px-4 py-2 font-medium text-gray-600 text-right">Realizado</th>
-                  <th className="px-4 py-2 font-medium text-gray-600 text-right">Variação</th>
+                  <th className="px-4 py-2 font-medium text-gray-600 text-right">Disponível</th>
                   <th className="px-4 py-2 font-medium text-gray-600 text-right">Progresso</th>
                 </tr>
               </thead>
