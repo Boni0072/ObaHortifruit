@@ -477,6 +477,12 @@ function ExpenseRow({ expense, accountingAccounts, assets, onSave, onOpenCreateA
   const [isSaving, setIsSaving] = useState(false);
   const [viewItemsOpen, setViewItemsOpen] = useState(false);
 
+  useEffect(() => {
+    const val = (expense.assetId !== null && expense.assetId !== undefined) ? String(expense.assetId) : "";
+    const cleanVal = (val === "NaN" || val === "nan") ? "" : val;
+    setAssetId(cleanVal);
+  }, [expense.assetId]);
+
   const handleSave = async () => {
     try {
       setIsSaving(true);
@@ -694,7 +700,16 @@ function ExpenseRow({ expense, accountingAccounts, assets, onSave, onOpenCreateA
 function ProjectBudgetRow({ project, onDataLoaded }: { project: ProjectType, onDataLoaded?: (id: string, planned: number, realized: number) => void }) {
   const [isOpen, setIsOpen] = useState(false);
   const { user } = useAuth();
-  const { data: assets } = trpc.assets.list.useQuery({ projectId: String(project.id) });
+  
+  const [assets, setAssets] = useState<any[]>([]);
+  useEffect(() => {
+    const q = query(collection(db, "assets"), where("projectId", "==", String(project.id)));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setAssets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, [project.id]);
+
   const { data: budgets } = trpc.budgets.listByProject.useQuery({ projectId: project.id });
   
   const [expenses, setExpenses] = useState<any[]>([]);
