@@ -11,6 +11,7 @@ import { expensesRouter } from "./routers/expenses";
 import { assetsRouter } from "./routers/assets";
 import { accountingRouter } from "./routers/accounting";
 import { usersRouter } from "./routers/users";
+import { nfeRouter } from "./routers/nfe";
 
 export const appRouter = router({
   system: systemRouter,
@@ -38,6 +39,8 @@ export const appRouter = router({
   accounting: accountingRouter,
 
   users: usersRouter,
+
+  nfe: nfeRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Activity, AlertTriangle, Play, Pause, ChevronDown, ChevronRight, ChevronLeft, Calendar, RotateCcw } from "lucide-react";
+import { Loader2, Activity, AlertTriangle, Play, Pause, ChevronDown, ChevronRight, ChevronLeft, Calendar, RotateCcw, FileText } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,7 @@ export default function AssetDepreciationPage() {
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
 
   const [assets, setAssets] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
   const [assetClasses, setAssetClasses] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [isLoadingAssets, setIsLoadingAssets] = useState(true);
@@ -47,6 +48,7 @@ export default function AssetDepreciationPage() {
   const [isCorporateExpanded, setIsCorporateExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<'realized' | 'projected'>('projected');
   const [useAcquisitionMonth, setUseAcquisitionMonth] = useState(false);
+  const [isCompositionExpanded, setIsCompositionExpanded] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, "assets"));
@@ -54,6 +56,14 @@ export default function AssetDepreciationPage() {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAssets(data);
       setIsLoadingAssets(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "projects"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setProjects(data);
     });
     return () => unsubscribe();
   }, []);
@@ -104,6 +114,11 @@ export default function AssetDepreciationPage() {
     const assetExpenses = expenses.filter(e => String(e.assetId) === String(asset.id));
     const expensesTotal = assetExpenses.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
     return Number(asset.value || 0) + expensesTotal;
+  };
+
+  const getAssetExpenses = (asset: any) => {
+    if (!expenses) return [];
+    return expenses.filter((expense: any) => String(expense.assetId) === String(asset.id));
   };
 
   const normalize = (str: string) => str?.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
@@ -1063,6 +1078,89 @@ export default function AssetDepreciationPage() {
               <div><span className="font-medium text-muted-foreground">Fim Depreciação:</span> {depreciationData.depreciationEndDate.toLocaleDateString('pt-BR')}</div>
             </div>
             <div className="border rounded-lg overflow-hidden">
+              <div 
+                className="bg-slate-100 px-4 py-2 flex justify-between items-center cursor-pointer hover:bg-slate-200 transition-colors border-b"
+                onClick={() => setIsCompositionExpanded(!isCompositionExpanded)}
+              >
+                <h3 className="font-semibold text-sm flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-slate-500" />
+                  Composição do Valor (Despesas Vinculadas)
+                </h3>
+                {isCompositionExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </div>
+              
+              {isCompositionExpanded && (
+                <div className="bg-white border-b">
+                  <Table className="text-sm">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Descrição da Despesa</TableHead>
+                        <TableHead>Obra</TableHead>
+                        <TableHead>Nota Fiscal</TableHead>
+                        <TableHead className="text-center">Itens</TableHead>
+                        <TableHead>Classificação</TableHead>
+                        <TableHead className="text-right">Valor</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {/* Valor Inicial do Cadastro */}
+                      {Number(assets.find(a => a.id === selectedAssetId)?.value || 0) > 0 && (
+                        <TableRow>
+                          <TableCell className="font-medium text-slate-700">Valor Original (Cadastro)</TableCell>
+                          <TableCell>-</TableCell>
+                          <TableCell>-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell>-</TableCell>
+                          <TableCell className="text-right font-medium">R$ {Number(assets.find(a => a.id === selectedAssetId)?.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground">Saldo Inicial</TableCell>
+                        </TableRow>
+                      )}
+                      
+                      {/* Despesas Vinculadas */}
+                      {getAssetExpenses(assets.find(a => a.id === selectedAssetId)).map((expense: any) => (
+                        <TableRow key={expense.id}>
+                          <TableCell>{expense.description}</TableCell>
+                          <TableCell>{projects.find(p => String(p.id) === String(expense.projectId))?.name || "-"}</TableCell>
+                          <TableCell className="font-mono text-xs text-muted-foreground">
+                            {expense.invoiceNumber || expense.notes?.match(/NF-e:\s*(\d{44})/)?.[1] || "-"}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {(expense.items && expense.items.length > 0) || (expense.notes && expense.notes.includes("Itens da Nota:")) ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={() => setViewItemsExpense(expense)}
+                              >
+                                <Eye size={14} className="text-blue-600" />
+                              </Button>
+                            ) : "-"}
+                          </TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                  expense.type === 'capex' ? 'bg-blue-100 text-blue-800' : 
+                                  expense.type === 'opex' ? 'bg-yellow-100 text-yellow-800' : 
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {expense.type || "-"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">R$ {Number(expense.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="text-right"></TableCell>
+                        </TableRow>
+                      ))}
+                      
+                      <TableRow className="bg-slate-50 font-bold border-t-2">
+                        <TableCell colSpan={5} className="text-right">Total Acumulado</TableCell>
+                        <TableCell className="text-right">R$ {depreciationData.assetValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell></TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
               <Table className="text-sm">
                 <TableHeader>
                   <TableRow>

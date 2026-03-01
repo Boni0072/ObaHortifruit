@@ -4,7 +4,7 @@ import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "fireb
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,6 +37,7 @@ export default function AssetsPage() {
   // Estado para visualização de detalhes (movido para cima para permitir uso nas queries)
   const [viewOpen, setViewOpen] = useState(false);
   const [viewingAsset, setViewingAsset] = useState<any>(null);
+  const [viewItemsExpense, setViewItemsExpense] = useState<any | null>(null);
 
   const [filters, setFilters] = useState({
     assetNumber: "",
@@ -245,6 +246,7 @@ export default function AssetsPage() {
       setFormData({ projectId: "", assetNumber: "", name: "", description: "", tagNumber: "", value: "", quantity: "1", startDate: new Date().toISOString().split("T")[0], notes: "", accountingAccount: "", assetClass: "", usefulLife: "", corporateUsefulLife: "", depreciationAccountCode: "", amortizationAccountCode: "", resultAccountCode: "", costCenter: "" });
       setEditingId(null);
       setOpen(false);
+      setViewItemsExpense(null);
       
       // If an asset was being viewed and it was the one just edited, update viewingAsset
       if (editingId && viewingAsset && viewingAsset.id === editingId) {
@@ -962,7 +964,7 @@ export default function AssetsPage() {
                             <TableHead className="text-base">Descrição da Despesa</TableHead>
                             <TableHead className="text-base">Obra</TableHead>
                             <TableHead className="text-base">Nota Fiscal</TableHead>
-                            <TableHead className="text-base">Classificação</TableHead>
+                            <TableHead className="text-base text-center">Itens</TableHead>
                             <TableHead className="text-right text-base">Valor</TableHead>
                             <TableHead className="text-right text-base">Ações</TableHead>
                           </TableRow>
@@ -973,7 +975,7 @@ export default function AssetsPage() {
                               <TableCell className="text-base font-medium text-slate-700">Valor Original (Cadastro)</TableCell>
                               <TableCell className="text-base text-muted-foreground">-</TableCell>
                               <TableCell className="text-base text-muted-foreground">-</TableCell>
-                              <TableCell className="text-base text-muted-foreground">-</TableCell>
+                              <TableCell className="text-base text-center">-</TableCell>
                               <TableCell className="text-right text-base font-medium">
                                 R$ {Number(viewingAsset.value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </TableCell>
@@ -992,14 +994,17 @@ export default function AssetsPage() {
                                   "-"
                                 }
                               </TableCell>
-                              <TableCell className="text-base">
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-sm font-medium ${
-                                  item.type === 'capex' ? 'bg-blue-100 text-blue-800' : 
-                                  item.type === 'opex' ? 'bg-yellow-100 text-yellow-800' : 
-                                  'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {item.type || "-"}
-                                </span>
+                              <TableCell className="text-base text-center">
+                                {(item.items && item.items.length > 0) || (item.notes && item.notes.includes("Itens da Nota:")) ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0"
+                                    onClick={() => setViewItemsExpense(item)}
+                                  >
+                                    <Eye size={14} className="text-blue-600" />
+                                  </Button>
+                                ) : "-"}
                               </TableCell>
                               <TableCell className="text-right text-base">
                                 R$ {Number(item.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1177,6 +1182,63 @@ export default function AssetsPage() {
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal de Visualização de Itens */}
+        <Dialog open={!!viewItemsExpense} onOpenChange={(open) => !open && setViewItemsExpense(null)}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>Itens da Despesa: {viewItemsExpense?.description}</DialogTitle>
+              {viewItemsExpense?.invoiceNumber && (
+                <DialogDescription>
+                  Nota Fiscal: <span className="font-mono font-medium text-slate-700">{viewItemsExpense.invoiceNumber}</span>
+                </DialogDescription>
+              )}
+            </DialogHeader>
+            <div className="mt-4 max-h-[60vh] overflow-y-auto">
+              {viewItemsExpense?.items && viewItemsExpense.items.length > 0 ? (
+                <div className="border rounded-md overflow-x-auto bg-white">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-100 font-medium text-slate-600 border-b">
+                      <tr>
+                        <th className="px-2 py-1 whitespace-nowrap">CÓDIGO PRODUTO</th>
+                        <th className="px-2 py-1">DESCRIÇÃO DO PRODUTO / SERVIÇO</th>
+                        <th className="px-2 py-1 whitespace-nowrap">NCM/SH</th>
+                        <th className="px-2 py-1 whitespace-nowrap">O/CST</th>
+                        <th className="px-2 py-1 whitespace-nowrap">CFOP</th>
+                        <th className="px-2 py-1 whitespace-nowrap">UN</th>
+                        <th className="px-2 py-1 text-right whitespace-nowrap">QUANT</th>
+                        <th className="px-2 py-1 text-right whitespace-nowrap">VALOR UNIT</th>
+                        <th className="px-2 py-1 text-right whitespace-nowrap">VALOR TOTAL</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {viewItemsExpense.items.map((prod: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="px-2 py-1 font-mono">{prod.code}</td>
+                          <td className="px-2 py-1">{prod.description}</td>
+                          <td className="px-2 py-1">{prod.ncm}</td>
+                          <td className="px-2 py-1">{prod.orig}/{prod.cst}</td>
+                          <td className="px-2 py-1">{prod.cfop}</td>
+                          <td className="px-2 py-1">{prod.unit}</td>
+                          <td className="px-2 py-1 text-right">{prod.quantity}</td>
+                          <td className="px-2 py-1 text-right">{Number(prod.unitPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          <td className="px-2 py-1 text-right font-medium">{Number(prod.totalPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="bg-slate-50 p-4 rounded-md text-sm whitespace-pre-wrap font-mono text-slate-600 border">
+                  {viewItemsExpense?.notes?.split("Itens da Nota:")[1]?.trim() || "Nenhum item detalhado encontrado."}
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setViewItemsExpense(null)}>Fechar</Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
