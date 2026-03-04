@@ -764,7 +764,7 @@ function CostCentersTab() {
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "cost_centers"), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CostCenter));
-      setCenters(data);
+      setCenters(data.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })));
       setIsLoading(false);
     });
     return () => unsubscribe();
