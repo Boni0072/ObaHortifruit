@@ -21,5 +21,6 @@ Sistema para gestão financeira e física de obras, com foco em controle de Cape
 ## Como rodar
 
 1. Instale as dependências: `npm install` ou `yarn`
-2. Configure as variáveis de ambiente no arquivo `.env`
-3. Inicie o servidor de desenvolvimento: `npm run dev`
+2. Copie o arquivo `.env.example` para um novo arquivo chamado `.env` na raiz do projeto.
+3. Abra o arquivo `.env` e preencha a variável `FIREBASE_SERVICE_ACCOUNT_KEY` com a sua chave de serviço do Firebase. As instruções detalhadas estão no próprio arquivo.
+4. Inicie o servidor de desenvolvimento: `npm run dev`

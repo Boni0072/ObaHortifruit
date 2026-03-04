@@ -19,6 +19,12 @@ const formatCurrency = (value: number) =>
     currency: "BRL",
   }).format(value);
 
+const formatDate = (value: any) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? "-" : date.toLocaleDateString("pt-BR", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" });
+};
+
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -161,13 +167,14 @@ export default function ProjectsPage() {
   };
 
   const handleDownloadTemplate = () => {
-    const headers = ["Código", "Nome da Obra", "Descrição", "Data de Início (AAAA-MM-DD)", "Data de Previsão de Conclusão (AAAA-MM-DD)", "Localização", "Centro de Custo", "Valor Planejado"];
-    const example = ["OBRA-001", "Residencial Horizonte", "Construção de torre residencial", "2024-03-01", "2025-12-31", "Curitiba, PR", "CC-OBRA-01", "5000000"];
+    const headers = ["Código", "Nome da Obra", "Descrição", "Data de Início (DD/MM/AAAA)", "Data de Previsão de Conclusão (DD/MM/AAAA)", "Localização", "Centro de Custo", "Capex Planejado", "Opex Planejado", "Valor Planejado"];
+    const example = ["OBRA-001", "Residencial Horizonte", "Construção de torre residencial", "01/03/2024", "31/12/2025", "Curitiba, PR", "CC-OBRA-01", "3000000", "2000000", "5000000"];
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, example]);
     
     // Ajuste de largura das colunas
     ws['!cols'] = [{ wch: 15 }, { wch: 30 }, { wch: 40 }, { wch: 25 }, { wch: 35 }, { wch: 20 }, { wch: 15 }, { wch: 15 }];
+    ws['!cols'] = [{ wch: 15 }, { wch: 30 }, { wch: 40 }, { wch: 25 }, { wch: 35 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
     
     XLSX.utils.book_append_sheet(wb, ws, "Template Obras");
     XLSX.writeFile(wb, "template_importacao_obras.xlsx");
@@ -182,7 +189,7 @@ export default function ProjectsPage() {
     reader.onload = async (e) => {
       try {
         const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: 'array' });
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json(worksheet);
@@ -204,20 +211,30 @@ export default function ProjectsPage() {
 
             const description = row["Descrição"] || "";
             let startDate = new Date().toISOString();
-            
-            if (row["Data de Início (AAAA-MM-DD)"]) {
-                const d = new Date(row["Data de Início (AAAA-MM-DD)"]);
-                if (!isNaN(d.getTime())) startDate = d.toISOString();
-            }
 
-            let estimatedEndDate = null;
-            if (row["Data de Previsão de Conclusão (AAAA-MM-DD)"]) {
-                const d = new Date(row["Data de Previsão de Conclusão (AAAA-MM-DD)"]);
-                if (!isNaN(d.getTime())) estimatedEndDate = d.toISOString();
-            }
+            const parseDate = (val: any) => {
+                if (!val) return null;
+                if (val instanceof Date) return val.toISOString();
+                if (typeof val === 'string') {
+                    if (val.includes('/')) {
+                        const [day, month, year] = val.split('/');
+                        const d = new Date(`${year}-${month}-${day}`);
+                        if (!isNaN(d.getTime())) return d.toISOString();
+                    }
+                    const d = new Date(val);
+                    if (!isNaN(d.getTime())) return d.toISOString();
+                }
+                return null;
+            };
+            
+            const dStart = parseDate(row["Data de Início (AAAA-MM-DD)"]);
+            if (dStart) startDate = dStart;
+
+            const estimatedEndDate = parseDate(row["Data de Previsão de Conclusão (AAAA-MM-DD)"]);
 
             const location = row["Localização"] || "";
             const costCenter = row["Centro de Custo"] || "";
+            
             const plannedValue = row["Valor Planejado"] ? Number(row["Valor Planejado"]) : 0;
 
             await addDoc(collection(db, "projects"), {
@@ -228,6 +245,8 @@ export default function ProjectsPage() {
                 estimatedEndDate,
                 location,
                 costCenter,
+                plannedCapex: 0,
+                plannedOpex: 0,
                 plannedValue,
                 status: 'aguardando_classificacao',
                 createdAt: new Date().toISOString()
@@ -558,8 +577,8 @@ export default function ProjectsPage() {
               </TableCell>
               <TableCell className="max-w-[200px] truncate" title={project.description || ""}>{project.description || "-"}</TableCell>
               <TableCell>{project.location || "-"}</TableCell>
-              <TableCell>{new Date(project.startDate).toLocaleDateString("pt-BR")}</TableCell>
-              <TableCell>{project.estimatedEndDate ? new Date(project.estimatedEndDate).toLocaleDateString("pt-BR") : "-"}</TableCell>
+              <TableCell>{formatDate(project.startDate)}</TableCell>
+              <TableCell>{formatDate(project.estimatedEndDate)}</TableCell>
               <TableCell>
                   <span className={`px-2 py-1 rounded-full text-xs font-medium w-fit ${statusColors[project.status]}`}>
                     {project.status.replace('_', ' ')}

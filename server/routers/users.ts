@@ -1,60 +1,25 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { firebaseAdmin } from "../_core/firebaseAdmin";
-import { protectedProcedure, router } from "../_core/trpc";
-import { db as clientDb } from "../../firebase";
-import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { auth, db } from "../../firebase";
+import { protectedProcedure, router, adminProcedure } from "../_core/trpc";
 
 export const usersRouter = router({
-  list: protectedProcedure.query(async () => {
+  list: adminProcedure.query(async () => {
     try {
-      // 1. Tenta via Admin SDK (Privilegiado)
-      if (firebaseAdmin.apps.length > 0) {
-        try {
-          const authUsers = await firebaseAdmin.auth().listUsers(1000);
-          const db = firebaseAdmin.firestore();
-          const userDocs = await db.collection("users").get();
+      const authUsers = await auth.listUsers(1000);
+      const userDocs = await db.collection("users").get();
 
-          const users = authUsers.users.map((user) => {
-            const userDoc = userDocs.docs.find((d) => d.id === user.uid);
-            const userData = userDoc ? userDoc.data() : {};
-
-            return {
-              id: user.uid,
-              email: user.email || "",
-              name: user.displayName || (userData.name as string) || "Sem Nome",
-              role: (userData.role as string) || "user",
-              allowedPages: (userData.allowedPages as string[]) || [],
-              createdAt: user.metadata.creationTime,
-            };
-          });
-
-          return users;
-        } catch (e) {
-          console.warn("[Users] Falha no Admin SDK, tentando Client SDK...", e);
-        }
-      }
-
-      // 2. Fallback: Client SDK (Funciona em Dev se as regras permitirem)
-      const snapshot = await getDocs(collection(clientDb, "users"));
-      const users = snapshot.docs.map((doc) => {
-        const data = doc.data();
-        
-        let createdAt: string | undefined;
-        if (data.createdAt && typeof data.createdAt.toDate === 'function') {
-          createdAt = data.createdAt.toDate().toISOString();
-        } else if (data.createdAt) {
-          // Se for qualquer outra coisa (string, etc), tenta passar direto
-          createdAt = data.createdAt;
-        }
+      const users = authUsers.users.map((user) => {
+        const userDoc = userDocs.docs.find((d) => d.id === user.uid);
+        const userData = userDoc ? userDoc.data() : {};
 
         return {
-          id: doc.id,
-          email: data.email,
-          name: data.name,
-          role: data.role,
-          allowedPages: data.allowedPages,
-          createdAt,
+          id: user.uid,
+          email: user.email || "",
+          name: user.displayName || (userData.name as string) || "Sem Nome",
+          role: (userData.role as string) || "user",
+          allowedPages: (userData.allowedPages as string[]) || [],
+          createdAt: user.metadata.creationTime,
         };
       });
 
@@ -68,7 +33,7 @@ export const usersRouter = router({
     }
   }),
 
-  create: protectedProcedure
+  create: adminProcedure
     .input(
       z.object({
         name: z.string(),
@@ -83,24 +48,14 @@ export const usersRouter = router({
       try {
         let uid: string;
 
-        // Verifica se o Admin SDK está pronto antes de tentar criar no Auth
-        if (firebaseAdmin.apps.length === 0) {
-          if (process.env.NODE_ENV === "development") {
-            console.warn("⚠️ AVISO: Admin SDK não configurado. Gerando usuário APENAS no Firestore (sem login).");
-            uid = `dev-${Date.now()}`;
-          } else {
-            throw new Error("Firebase Admin SDK não inicializado. Verifique as credenciais.");
-          }
-        } else {
-          // 1. Criar usuário no Firebase Authentication (apenas se SDK estiver ok)
-          const userRecord = await firebaseAdmin.auth().createUser({
-            email: input.email,
-            password: input.password,
-            displayName: input.name,
-          });
-          uid = userRecord.uid;
-          console.log(`[Users] Usuário criado no Auth com UID: ${uid}`);
-        }
+        // 1. Criar usuário no Firebase Authentication
+        const userRecord = await auth.createUser({
+          email: input.email,
+          password: input.password,
+          displayName: input.name,
+        });
+        uid = userRecord.uid;
+        console.log(`[Users] Usuário criado no Auth com UID: ${uid}`);
 
         // 2. Salvar metadados no Firestore usando o UID como ID do documento
         const dataToSave = {
@@ -108,13 +63,7 @@ export const usersRouter = router({
           createdAt: new Date(),
           updatedAt: new Date(),
         };
-
-        if (firebaseAdmin.apps.length > 0) {
-          await firebaseAdmin.firestore().collection("users").doc(uid).set(dataToSave);
-        } else {
-          // Fallback para Client SDK
-          await setDoc(doc(clientDb, "users", uid), dataToSave);
-        }
+        await db.collection("users").doc(uid).set(dataToSave);
 
         console.log(`[Users] Metadados do usuário salvos no Firestore! ID: ${uid}`);
         return { id: uid };
@@ -140,7 +89,7 @@ export const usersRouter = router({
       }
     }),
 
-  update: protectedProcedure
+  update: adminProcedure
     .input(
       z.object({
         id: z.string(),
@@ -158,18 +107,11 @@ export const usersRouter = router({
 
         // Atualiza no Firebase Auth se necessário
         if (data.email || data.name || (password && password.length >= 6)) {
-          if (firebaseAdmin.apps.length > 0) {
-            await firebaseAdmin.auth().updateUser(id, {
-              ...(data.email && { email: data.email }),
-              ...(data.name && { displayName: data.name }),
-              ...(password && password.length >= 6 && { password: password }),
-            });
-          } else if (process.env.NODE_ENV === "development") {
-            console.warn("[Users] Admin SDK não inicializado. Pulando atualização do Auth.");
-            if (password) {
-              console.warn("⚠️ AVISO: A senha não será alterada via aplicação pois o Admin SDK não está configurado.");
-            }
-          }
+          await auth.updateUser(id, {
+            ...(data.email && { email: data.email }),
+            ...(data.name && { displayName: data.name }),
+            ...(password && password.length >= 6 && { password: password }),
+          });
         }
         
         // Atualiza no Firestore
@@ -177,14 +119,7 @@ export const usersRouter = router({
           Object.entries(data).filter(([_, v]) => v !== undefined)
         );
         const finalUpdateData = { ...updateData, updatedAt: new Date() };
-
-        if (firebaseAdmin.apps.length > 0) {
-          const db = firebaseAdmin.firestore();
-          await db.collection("users").doc(id).update(finalUpdateData);
-        } else {
-          // Fallback para Client SDK
-          await updateDoc(doc(clientDb, "users", id), finalUpdateData);
-        }
+        await db.collection("users").doc(id).update(finalUpdateData);
 
         return { success: true };
       } catch (error) {
@@ -199,25 +134,16 @@ export const usersRouter = router({
       }
     }),
 
-  delete: protectedProcedure
+  delete: adminProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input }) => {
       try {
         // 1. Deletar do Firebase Authentication
-        if (firebaseAdmin.apps.length > 0) {
-          await firebaseAdmin.auth().deleteUser(input.id);
-          console.log(`[Users] Usuário deletado do Auth: ${input.id}`);
-        } else if (process.env.NODE_ENV === "development") {
-          console.warn("[Users] Admin SDK não inicializado. Pulando deleção do Auth.");
-        }
+        await auth.deleteUser(input.id);
+        console.log(`[Users] Usuário deletado do Auth: ${input.id}`);
 
         // 2. Deletar do Firestore
-        if (firebaseAdmin.apps.length > 0) {
-          await firebaseAdmin.firestore().collection("users").doc(input.id).delete();
-        } else {
-          await deleteDoc(doc(clientDb, "users", input.id));
-        }
-
+        await db.collection("users").doc(input.id).delete();
         console.log(`[Users] Usuário deletado do Firestore: ${input.id}`);
 
         return { success: true };

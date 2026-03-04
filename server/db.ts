@@ -1,5 +1,4 @@
 import { db } from "../firebase";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { ENV } from './_core/env';
 
 export type User = {
@@ -18,8 +17,8 @@ export async function upsertUser(user: Partial<User> & { openId: string }): Prom
     throw new Error("User openId is required for upsert");
   }
 
-  const userRef = doc(db, "users", user.openId);
-  const snap = await getDoc(userRef);
+  const userRef = db.collection("users").doc(user.openId);
+  const snap = await userRef.get();
   const now = new Date();
 
   let role = user.role;
@@ -36,23 +35,24 @@ export async function upsertUser(user: Partial<User> & { openId: string }): Prom
   // Remove undefined fields
   Object.keys(userData).forEach(key => userData[key] === undefined && delete userData[key]);
 
-  if (!snap.exists()) {
-    await setDoc(userRef, {
+  if (!snap.exists) {
+    await userRef.set({
       ...userData,
       role: role ?? "user",
       createdAt: now,
     });
   } else {
-    await updateDoc(userRef, userData);
+    await userRef.update(userData);
   }
 }
 
 export async function getUserByOpenId(openId: string): Promise<User | undefined> {
-  const userRef = doc(db, "users", openId);
-  const snap = await getDoc(userRef);
+  const userRef = db.collection("users").doc(openId);
+  const snap = await userRef.get();
 
-  if (snap.exists()) {
+  if (snap.exists) {
     const data = snap.data();
+    if (!data) return undefined;
     return {
       openId: data.openId,
       email: data.email ?? null,

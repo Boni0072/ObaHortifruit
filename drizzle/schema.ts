@@ -88,6 +88,7 @@ export const assets = mysqlTable("assets", {
   description: text("description"),
   status: mysqlEnum("status", ["planejamento", "em_desenvolvimento", "concluido", "parado"]).default("planejamento").notNull(),
   type: varchar("type", { length: 100 }).notNull(),
+  code: varchar("code", { length: 50 }).notNull().default(""),
   value: decimal("value", { precision: 15, scale: 2 }),
   startDate: timestamp("startDate"),
   endDate: timestamp("endDate"),

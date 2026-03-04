@@ -202,7 +202,7 @@ export default function AssetInventoryPage() {
     const matchesSearch = (asset.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     (asset.tagNumber || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     (asset.assetNumber || "").toLowerCase().includes(searchTerm.toLowerCase());
-    const assetCC = typeof asset.costCenter === 'object' ? (asset.costCenter as any).code : asset.costCenter;
+    const assetCC = typeof asset.costCenter === 'object' && asset.costCenter ? (asset.costCenter as any).code : asset.costCenter;
     const matchesCostCenter = selectedCostCenter === "all" || assetCC === selectedCostCenter;
     const matchesAssetClass = selectedAssetClass === "all" || asset.assetClass === selectedAssetClass;
     const isCompleted = asset.status === 'concluido';

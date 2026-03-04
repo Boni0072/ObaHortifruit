@@ -1,9 +1,7 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../db";
 import { sdk } from "./sdk";
-import { firebaseAdmin } from "./firebaseAdmin";
-import { db } from "../../firebase";
-import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { db, auth } from "../../firebase";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -39,11 +37,10 @@ export async function createContext(
       }
 
       // 1. Tenta via Admin SDK (se disponível)
-      if (firebaseAdmin.apps.length > 0) {
+      if (auth) {
         try {
-          const decodedToken = await firebaseAdmin.auth().verifyIdToken(idToken);
-          const dbAdmin = firebaseAdmin.firestore();
-          const userSnap = await dbAdmin.collection("users").doc(decodedToken.uid).get();
+          const decodedToken = await auth.verifyIdToken(idToken);
+          const userSnap = await db.collection("users").doc(decodedToken.uid).get();
           
           if (userSnap.exists) {
             const userData = userSnap.data();
@@ -81,15 +78,15 @@ export async function createContext(
             devTokenData = { uid, email, name };
             
             if (uid) {
-              // Tenta buscar dados reais no Firestore (Client SDK)
-              let userDoc = await getDoc(doc(db, "users", uid));
-              let userData = userDoc.exists() ? userDoc.data() : null;
+              // Tenta buscar dados reais no Firestore (Admin SDK)
+              let userDoc = await db.collection("users").doc(uid).get();
+              let userData = userDoc.exists ? userDoc.data() : null;
               let finalUid = uid;
               
               // Se não achou pelo UID, tenta pelo email
               if (!userData && email) {
-                const q = query(collection(db, "users"), where("email", "==", email));
-                const querySnapshot = await getDocs(q);
+                const q = db.collection("users").where("email", "==", email);
+                const querySnapshot = await q.get();
                 if (!querySnapshot.empty) {
                   const docSnap = querySnapshot.docs[0];
                   userData = docSnap.data();
