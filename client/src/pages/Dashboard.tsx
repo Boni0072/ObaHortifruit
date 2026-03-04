@@ -1,13 +1,16 @@
 import { useState, useMemo, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, updateDoc, doc } from "firebase/firestore";
 import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, TrendingUp, DollarSign, Package, Activity, BarChart3, ArrowUpRight, AlertTriangle, TrendingDown, Target, Wallet, X, ChevronDown, ChevronRight, ClipboardList, Calendar, CheckCircle2, Clock, FileText, ChevronLeft } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, Package, Activity, BarChart3, ArrowUpRight, AlertTriangle, TrendingDown, Target, Wallet, X, ChevronDown, ChevronRight, ClipboardList, Calendar, CheckCircle2, Clock, FileText, ChevronLeft, Bell, Check, Eye } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useLocation } from "wouter";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { toast } from "sonner";
+import { Textarea } from "@/components/ui/textarea";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", {
@@ -37,6 +40,7 @@ const parseDate = (value: any): Date => {
 };
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [viewMode, setViewMode] = useState<'budget' | 'assets'>('budget');
   const [depreciationType, setDepreciationType] = useState<'fiscal' | 'corporate'>('fiscal');
   const [showBurnRateDetails, setShowBurnRateDetails] = useState(false);
@@ -48,6 +52,8 @@ export default function Dashboard() {
   const [selectedMonthDrilldown, setSelectedMonthDrilldown] = useState<{ monthIndex: number, year: number, schedules: any[] } | null>(null);
   const [selectedDayDrilldown, setSelectedDayDrilldown] = useState<{ day: number, schedules: any[] } | null>(null);
   const [selectedStatusDrilldown, setSelectedStatusDrilldown] = useState<{ status: string, assets: any[] } | null>(null);
+  const [rejectionDialog, setRejectionDialog] = useState<{open: boolean, projectId: string | null}>({open: false, projectId: null});
+  const [rejectionReason, setRejectionReason] = useState("");
 
   const [projects, setProjects] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -115,6 +121,60 @@ export default function Dashboard() {
     }
     const date = new Date(isoString);
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  };
+
+  const approvalSteps = [
+    { id: 'aguardando_classificacao', label: 'Classificação', requiredRole: 'classificacao' },
+    { id: 'aguardando_engenharia', label: 'Engenharia', requiredRole: 'engenharia' },
+    { id: 'aguardando_diretoria', label: 'Diretoria', requiredRole: 'diretoria' },
+    { id: 'aprovado', label: 'Aprovado', requiredRole: null }
+  ];
+
+  const pendingApprovals = useMemo(() => {
+    if (!projects || !user) return [];
+    return projects.filter(p => {
+        const currentStepIndex = approvalSteps.findIndex(s => s.id === p.status);
+        if (currentStepIndex === -1 || currentStepIndex >= approvalSteps.length - 1) return false;
+        
+        const currentStep = approvalSteps[currentStepIndex];
+        const userRole = (user as any)?.role;
+        
+        return userRole === 'diretoria' || userRole === currentStep.requiredRole;
+    });
+  }, [projects, user]);
+
+  const handleApproveProject = async (project: any) => {
+    const currentStepIndex = approvalSteps.findIndex(s => s.id === project.status);
+    if (currentStepIndex === -1 || currentStepIndex >= approvalSteps.length - 1) return;
+    
+    const nextStep = approvalSteps[currentStepIndex + 1];
+    
+    try {
+        await updateDoc(doc(db, "projects", project.id), {
+            status: nextStep.id,
+            updatedAt: new Date().toISOString()
+        });
+        toast.success(`Projeto ${project.name} aprovado para ${nextStep.label}!`);
+    } catch (error) {
+        toast.error("Erro ao aprovar projeto.");
+    }
+  };
+
+  const handleRejectProject = async () => {
+    if (!rejectionDialog.projectId || !rejectionReason) return;
+    
+    try {
+        await updateDoc(doc(db, "projects", rejectionDialog.projectId), {
+            status: 'rejeitado',
+            notes: rejectionReason,
+            updatedAt: new Date().toISOString()
+        });
+        toast.success("Projeto rejeitado.");
+        setRejectionDialog({open: false, projectId: null});
+        setRejectionReason("");
+    } catch (error) {
+        toast.error("Erro ao rejeitar projeto.");
+    }
   };
 
   // Capex Metrics
@@ -655,6 +715,59 @@ export default function Dashboard() {
           {viewMode === 'budget' ? 'Dashboard: Controle Orçamentário' : 'Dashboard: Gestão de Ativos'}
         </h1>
       </div>
+
+      {/* Notificações de Aprovação */}
+      {pendingApprovals.length > 0 && (
+        <Card className="border-l-4 border-l-orange-500 bg-orange-50/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-semibold text-slate-700 flex items-center gap-2">
+              <Bell className="h-5 w-5 text-orange-500" />
+              Notificações ({pendingApprovals.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {pendingApprovals.map(project => (
+                <div key={project.id} className="bg-white p-4 rounded-lg border shadow-sm flex flex-col md:flex-row justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="font-bold text-slate-800">{project.name}</h3>
+                      <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full font-medium">
+                        Aprovação Pendente
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 text-sm bg-slate-50 p-3 rounded-md border border-slate-100">
+                        <div>
+                            <span className="text-xs text-slate-500 block font-medium uppercase">Capex</span>
+                            <span className="font-mono font-medium text-slate-700">{formatCurrency(Number(project.plannedCapex || 0))}</span>
+                        </div>
+                        <div>
+                            <span className="text-xs text-slate-500 block font-medium uppercase">Opex</span>
+                            <span className="font-mono font-medium text-slate-700">{formatCurrency(Number(project.plannedOpex || 0))}</span>
+                        </div>
+                        <div>
+                            <span className="text-xs text-slate-500 block font-medium uppercase">Valor Planejado</span>
+                            <span className="font-mono font-bold text-blue-600">{formatCurrency(Number(project.plannedValue || 0))}</span>
+                        </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-end md:self-center">
+                    <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50 border-red-200" onClick={() => setRejectionDialog({open: true, projectId: project.id})}>
+                      <X className="w-4 h-4 mr-1" /> Rejeitar
+                    </Button>
+                    <Button variant="outline" size="sm" className="text-slate-600" onClick={() => window.location.href = '/budgets'}>
+                      <Eye className="w-4 h-4 mr-1" /> Visualizar
+                    </Button>
+                    <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleApproveProject(project)}>
+                      <Check className="w-4 h-4 mr-1" /> Aprovar
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Seção Controle de Budget (FP&A) */}
       {viewMode === 'budget' && budgetMetrics && (
@@ -1689,6 +1802,25 @@ export default function Dashboard() {
       </Dialog>
       </div>
       )}
+
+      {/* Dialog de Rejeição */}
+      <Dialog open={rejectionDialog.open} onOpenChange={(open) => !open && setRejectionDialog({open: false, projectId: null})}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rejeitar Projeto</DialogTitle>
+            <DialogDescription>
+              Informe o motivo da rejeição para o solicitante.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Textarea placeholder="Motivo da rejeição..." value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectionDialog({open: false, projectId: null})}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleRejectProject}>Confirmar Rejeição</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

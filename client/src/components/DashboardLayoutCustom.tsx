@@ -457,7 +457,19 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                         <div key={project.id} className="p-4 border rounded-lg bg-slate-50">
                           <h3 className="font-semibold text-slate-800">{project.name}</h3>
                           <p className="text-sm text-slate-600 mb-3">{project.description || "Sem descrição"}</p>
-                          <div className="flex gap-2 justify-end">
+                           <div className="grid grid-cols-3 gap-2 text-xs">
+                              <div>
+                                  <span className="text-xs text-slate-500 block font-medium uppercase">Capex</span>
+                                  <span className="font-mono font-medium text-slate-700">{formatCurrency(Number(project.plannedCapex || 0))}</span>
+                              </div>
+                              <div>
+                                  <span className="text-xs text-slate-500 block font-medium uppercase">Opex</span>
+                                  <span className="font-mono font-medium text-slate-700">{formatCurrency(Number(project.plannedOpex || 0))}</span>
+                              </div>
+                              <div>
+                                  <span className="text-xs text-slate-500 block font-medium uppercase">Valor Planejado</span>
+                                  <span className="font-mono font-bold text-blue-600">{formatCurrency(Number(project.plannedValue || 0))}</span>
+                              </div>
                             <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200" onClick={() => handleReject(project)}>
                               <XCircle size={16} className="mr-1" /> Rejeitar
                             </Button>
