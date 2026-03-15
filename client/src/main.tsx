@@ -42,9 +42,9 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
-      fetch(input, init) {
+      async fetch(input, init) {
         const token = localStorage.getItem("obras_token");
-        return globalThis.fetch(input, {
+        const response = await globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
           headers: {
@@ -52,6 +52,13 @@ const trpcClient = trpc.createClient({
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
         });
+
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("text/html")) {
+          throw new Error(`Erro de comunicação com a API: Resposta HTML inesperada (Status ${response.status}). O backend pode estar offline ou a URL está incorreta.`);
+        }
+
+        return response;
       },
     }),
   ],

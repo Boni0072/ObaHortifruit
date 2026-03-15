@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, addDoc, updateDoc, doc, query, orderBy } from "firebase/firestore";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";

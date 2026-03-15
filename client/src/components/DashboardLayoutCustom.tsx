@@ -6,7 +6,6 @@ import { getLoginUrl } from '@/const';
 import { useLocation } from 'wouter';
 import { Menu, X, LogOut, Home, FileText, DollarSign, Package, BarChart3, Landmark, Users, Bell, CheckCircle2, XCircle, ClipboardList, Eye, Check, ArrowRightLeft, TrendingDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { trpc } from "@/lib/trpc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
