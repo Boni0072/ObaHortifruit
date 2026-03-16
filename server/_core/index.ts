@@ -1,6 +1,5 @@
 import "dotenv/config";
 import express from "express";
-import cors from "cors";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -12,7 +11,6 @@ import { fileURLToPath } from "url";
 export const app = express();
 const server = createServer(app);
 
-app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
@@ -34,7 +32,7 @@ app.get("/api/health", (req, res) => {
 registerOAuthRoutes(app);
 
 app.use(
-  ["/api/trpc", "/trpc"],
+  "/api/trpc",
   createExpressMiddleware({
     router: appRouter,
     createContext,
