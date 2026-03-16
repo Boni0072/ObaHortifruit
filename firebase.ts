@@ -60,8 +60,10 @@ try {
 } catch (error: any) {
   console.error("❌ Erro ao inicializar Firebase Admin:", error.message);
   console.error(`📂 Diretório de execução: ${process.cwd()}`);
-  console.error("👉 O servidor não pode iniciar. Verifique se o arquivo .env existe na raiz do projeto e contém as chaves corretas.");
-  process.exit(1); // Interrompe a execução se a inicialização falhar
+  console.error("👉 O servidor não pode iniciar. Verifique as variáveis de ambiente (FIREBASE_SERVICE_ACCOUNT_KEY) no seu ambiente de produção (Vercel).");
+  // Em um ambiente serverless (como a Vercel), `process.exit()` pode causar o encerramento abrupto
+  // da função e mascarar o erro original. Lançar o erro permite que a plataforma o capture e registre corretamente.
+  throw new Error(`Falha na inicialização do Firebase Admin: ${error.message}`);
 }
 
 export { db, auth };
