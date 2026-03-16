@@ -1,23 +1,6 @@
-import { useEffect } from "react";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { Button } from "@/components/ui/button";
-import { useLocation } from "wouter";
 import { BarChart3, DollarSign, FileText, Package, TrendingUp } from "lucide-react";
 
 export default function Home() {
-  const { isAuthenticated } = useAuth();
-  const [, setLocation] = useLocation();
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      setLocation("/dashboard");
-    }
-  }, [isAuthenticated, setLocation]);
-
-  if (isAuthenticated) {
-    return null;
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* Navigation */}
