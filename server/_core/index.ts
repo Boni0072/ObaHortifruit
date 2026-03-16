@@ -3,14 +3,22 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { appRouter } from "../routers";
+import { mergeRouters } from "@trpc/server";
+import { appRouter as mainRouter } from "../routers";
 import { createContext } from "./context";
 import { registerOAuthRoutes } from "./oauth";
 import { fileURLToPath } from "url";
 import path from "path";
+import { router } from "./trpc";
+import { authRouter } from "./authRouter";
 
 export const app = express();
 const server = createServer(app);
+
+// Garante que o router de auth esteja disponível mesmo se não estiver no ../routers
+const appRouter = mergeRouters(mainRouter, router({
+  auth: authRouter
+}));
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));

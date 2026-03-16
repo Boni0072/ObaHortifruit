@@ -36,7 +36,7 @@ export async function setupVite(app: Express, server: Server) {
 
     // Se a URL parecer um arquivo (tiver extensão) e não for html, retorna 404
     // Isso evita o erro "Unexpected token '<'" em scripts/imagens faltando
-    if (url.match(/\.[a-zA-Z0-9]+$/) && !url.endsWith(".html")) {
+    if (url.match(/\.[a-zA-Z0-9]+$/) && !url.endsWith(".html") && !url.startsWith("/api/")) {
       return res.status(404).end();
     }
 
@@ -79,7 +79,7 @@ export function serveStatic(app: Express) {
   // fall through to index.html if the file doesn't exist
   app.use("*", (_req, res) => {
     // Mesma verificação para produção
-    if (_req.originalUrl.match(/\.[a-zA-Z0-9]+$/) && !_req.originalUrl.endsWith(".html")) {
+    if (_req.originalUrl.match(/\.[a-zA-Z0-9]+$/) && !_req.originalUrl.endsWith(".html") && !_req.originalUrl.startsWith("/api/")) {
       return res.status(404).end();
     }
     res.sendFile(path.resolve(distPath, "index.html"));
