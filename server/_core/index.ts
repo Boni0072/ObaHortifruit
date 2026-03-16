@@ -7,6 +7,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { registerOAuthRoutes } from "./oauth";
 import { fileURLToPath } from "url";
+import path from "path";
 
 export const app = express();
 const server = createServer(app);
@@ -84,7 +85,14 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 // Inicia o servidor apenas se executado diretamente (não importado pelo Vercel)
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+const currentFile = fileURLToPath(import.meta.url);
+const executedFile = process.argv[1];
+const isMainModule = executedFile && (
+  path.resolve(executedFile) === path.resolve(currentFile) ||
+  (process.platform === "win32" && path.resolve(executedFile).toLowerCase() === path.resolve(currentFile).toLowerCase())
+);
+
+if (isMainModule) {
   startServer().catch(console.error);
 }
 
