@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function setupVite(app: Express, server: Server) {
   const { createServer: createViteServer } = await import("vite");
-  const viteConfigModule = await import("../../vite.config");
+  const viteConfigModule = await import("../../vite.config.js");
   const viteConfig = (viteConfigModule as any).default || viteConfigModule;
   const config = (viteConfig as any).default || viteConfig;
 

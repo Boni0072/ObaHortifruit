@@ -2,9 +2,9 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { appRouter as mainRouter } from "../routers";
-import { createContext } from "./context";
-import { registerOAuthRoutes } from "./oauth";
+import { appRouter as mainRouter } from "../routers/index.js";
+import { createContext } from "./context.js";
+import { registerOAuthRoutes } from "./oauth.js";
 import { fileURLToPath } from "url";
 import path from "path";
 
@@ -43,10 +43,10 @@ app.use(
 
 async function startServer() {
   if (process.env.NODE_ENV === "development") {
-    const { setupVite } = await import("./vite");
+    const { setupVite } = await import("./vite.js");
     await setupVite(app, server);
   } else {
-    const { serveStatic } = await import("./vite");
+    const { serveStatic } = await import("./vite.js");
     serveStatic(app);
   }
 

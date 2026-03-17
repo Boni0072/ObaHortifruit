@@ -1,7 +1,7 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
-import type { User } from "../db";
-import { sdk } from "./sdk";
-import { db, auth } from "../../firebase";
+import type { User } from "../db.js";
+import { sdk } from "./sdk.js";
+import { db, auth } from "../../firebase.js";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -12,6 +12,7 @@ export type TrpcContext = {
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
+  try {
   let user: User | null = null;
   let devTokenData: { uid: string; email: string; name: string } | null = null;
 
@@ -139,4 +140,12 @@ export async function createContext(
     res: opts.res,
     user,
   };
+  } catch (err) {
+    console.error("[Context] Critical error in createContext, returning null user to prevent 500:", err);
+    return {
+      req: opts.req,
+      res: opts.res,
+      user: null,
+    };
+  }
 }

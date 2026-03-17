@@ -7,7 +7,7 @@
  * See API examples below the type definitions for usage patterns.
  */
 
-import { ENV } from "./env";
+import { ENV } from "./env.js";
 
 // ============================================================================
 // Configuration
@@ -313,7 +313,3 @@ export type RoadsResult = {
  * Output: Image URL (not JSON) - use directly in <img src={url} />
  * Note: Construct URL manually with getMapsConfig() for auth
  */
-
-
-
-

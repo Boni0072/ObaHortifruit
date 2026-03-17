@@ -1,1 +1,3 @@
-export { default } from '../server/_core/index';
+import app from '../server/_core/index.js';
+
+export default app;
