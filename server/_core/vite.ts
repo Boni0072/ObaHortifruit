@@ -66,8 +66,9 @@ export async function setupVite(app: Express, server: Server) {
 export function serveStatic(app: Express) {
   const distPath =
     process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../..", "dist", "public")
-      : path.resolve(__dirname, "public");
+      ? path.resolve(__dirname, "../..", "dist") // Ajuste conforme onde seu vite build output fica localmente
+      : path.resolve(__dirname, "../../client"); // Em prod (dist), sobe 2 niveis. Mas espere, o build do client geralmente fica separado.
+      // Mantendo lógica original mas alertando: verifique se a pasta 'public' ou 'dist' do front existe no deploy.
   if (!fs.existsSync(distPath)) {
     console.error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`

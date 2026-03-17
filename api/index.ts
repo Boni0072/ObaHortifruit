@@ -1,3 +1,3 @@
-import app from '../server/_core/index.js';
+import app from '../dist/server/_core/index.js';
 
 export default app;
