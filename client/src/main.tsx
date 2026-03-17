@@ -1,82 +1,62 @@
-import { trpc } from "@/lib/trpc";
-import { UNAUTHED_ERR_MSG } from '@shared/const';
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, TRPCClientError } from "@trpc/client";
-import { createRoot } from "react-dom/client";
-import superjson from "superjson";
-import App from "./components/App";
-import { getLoginUrl } from "./const";
-import "./index.css";
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-    },
-  },
-});
-
-const redirectToLoginIfUnauthorized = (error: unknown) => {
-  if (!(error instanceof TRPCClientError)) return;
-  if (typeof window === "undefined") return;
-
-  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
-
-  if (!isUnauthorized) return;
-
-  window.location.href = getLoginUrl();
-};
-
-queryClient.getQueryCache().subscribe(event => {
-  if (event.type === "updated" && event.action.type === "error") {
-    const error = event.query.state.error;
-    redirectToLoginIfUnauthorized(error);
-    console.error("[API Query Error]", error);
-  }
-});
-
-queryClient.getMutationCache().subscribe(event => {
-  if (event.type === "updated" && event.action.type === "error") {
-    const error = event.mutation.state.error;
-    redirectToLoginIfUnauthorized(error);
-    console.error("[API Mutation Error]", error);
-  }
-});
-
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
       url: import.meta.env.VITE_API_URL || "/api/trpc",
       transformer: superjson,
-      async fetch(input, init) {
+      async fetch(input, init ) {
         const token = localStorage.getItem("obras_token");
-        const response = await globalThis.fetch(input, {
-          ...(init ?? {}),
-          credentials: "include",
-          headers: {
-            ...(init?.headers ?? {}),
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
+        
+        try {
+          const response = await globalThis.fetch(input, {
+            ...(init ?? {}),
+            credentials: "include",
+            headers: {
+              ...(init?.headers ?? {}),
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          });
 
-        const contentType = response.headers.get("content-type");
-        if ((contentType && contentType.includes("text/html")) || (!response.ok && !contentType?.includes("application/json"))) {
-          if (response.status === 404) {
-            throw new Error(`Rota da API não encontrada (404). Verifique se o backend está rodando e se a URL '${input.toString()}' está correta.`);
+          // Se a resposta não for ok e não for JSON, criamos uma resposta JSON de erro
+          // Isso evita o erro de parsing do tRPC que causa crash na aplicação
+          const contentType = response.headers.get("content-type");
+          if (!response.ok && (!contentType || !contentType.includes("application/json"))) {
+            console.error(`[tRPC Fetch Error] Status: ${response.status}, URL: ${input.toString()}`);
+            
+            // Retorna uma resposta mockada para o tRPC lidar graciosamente
+            return new Response(
+              JSON.stringify({
+                error: {
+                  message: `Erro do servidor: ${response.status}`,
+                  code: response.status === 401 || response.status === 403 ? -32001 : -32603,
+                  data: {
+                    code: response.status === 401 || response.status === 403 ? "UNAUTHORIZED" : "INTERNAL_SERVER_ERROR",
+                    httpStatus: response.status
+                  }
+                }
+              } ),
+              {
+                status: response.status,
+                headers: { "Content-Type": "application/json" }
+              }
+            );
           }
-          throw new Error(`Erro de comunicação com a API: Resposta inesperada (Status ${response.status}). O backend pode estar offline ou a URL está incorreta.`);
-        }
 
-        return response;
+          return response;
+        } catch (error) {
+          console.error("[tRPC Network Error]", error);
+          // Em caso de falha de rede, retorna um erro formatado para o tRPC
+          return new Response(
+            JSON.stringify({
+              error: {
+                message: "Erro de conexão com o servidor",
+                code: -32001,
+                data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 500 }
+              }
+            } ),
+            { status: 500, headers: { "Content-Type": "application/json" } }
+          );
+        }
       },
     }),
   ],
 });
-
-createRoot(document.getElementById("root")!).render(
-  <trpc.Provider client={trpcClient} queryClient={queryClient}>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </trpc.Provider>
-);

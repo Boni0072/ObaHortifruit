@@ -1,13 +1,19 @@
-import { router } from "./_core/trpc";
-import { projectsRouter } from "./projects";
-import { expensesRouter } from "./expenses";
-import { budgetsRouter } from "./budgets";
-import { assetsRouter } from "./assets";
-import { accountingRouter } from "./accounting";
-import { budgetItemsRouter } from "./budgetItems";
-import { usersRouter } from "./users";
+import { router } from "../_core/trpc.js";
+import { projectsRouter } from "./projects.js";
+import { expensesRouter } from "./expenses.js";
+import { budgetsRouter } from "./budgets.js";
+import { assetsRouter } from "./assets.js";
+import { accountingRouter } from "./accounting.js";
+import { budgetItemsRouter } from "./budgetItems.js";
+import { usersRouter } from "./users.js";
+import { publicProcedure } from "../_core/trpc.js";
 
 export const appRouter = router({
+  auth: router({
+    me: publicProcedure.query(({ ctx }) => {
+      return ctx.user ?? null;
+    }),
+  }),
   projects: projectsRouter,
   expenses: expensesRouter,
   budgets: budgetsRouter,
